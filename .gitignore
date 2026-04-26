@@ -1,0 +1,7 @@
+/euphrates
+/dist/
+*.test
+*.out
+*.log
+.idea/
+.vscode/
