@@ -5,27 +5,25 @@ import (
 	"testing"
 )
 
-func TestEscapeContent_NeutralisesTags(t *testing.T) {
+func TestEscape_NeutralisesTags(t *testing.T) {
 	in := "look [red]not red[-]"
-	out := escapeContent(in)
+	out := Escape(in)
 	if !strings.Contains(out, "[red[]") {
 		t.Errorf("did not escape: %q", out)
 	}
-	if strings.Contains(out, "[red]") {
-		// the original tag must no longer appear unescaped
-		// (it appears as "[red[]")
-		// regex: ensure "[red]" is not present as a standalone tag
-		// by checking it's not followed-by something other than '['
-		idx := strings.Index(out, "[red]")
-		if idx >= 0 && (idx+5 >= len(out) || out[idx+5] != '[') {
-			t.Errorf("unescaped tag survived: %q", out)
-		}
+}
+
+func TestEscape_NoBrackets(t *testing.T) {
+	if Escape("hello world") != "hello world" {
+		t.Error("non-bracket content modified")
 	}
 }
 
-func TestEscapeContent_NoBrackets(t *testing.T) {
-	if escapeContent("hello world") != "hello world" {
-		t.Error("non-bracket content modified")
+func TestEscape_PermissiveBeyondTviewStock(t *testing.T) {
+	// `@` is not in tview's stock Escape character class but our Escape
+	// neutralises it too, so the prompt label stays a single literal.
+	if Escape("[@alice]") != "[@alice[]" {
+		t.Errorf("@-prefixed escape: %q", Escape("[@alice]"))
 	}
 }
 

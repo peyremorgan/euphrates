@@ -32,14 +32,19 @@ type Message struct {
 	Kind    MessageKind
 }
 
-// tviewEscapePattern mirrors tview's Escape regex: any [...] that doesn't
-// embed nested brackets is neutralised by inserting "[]" after the closing
-// "]". Defined locally to avoid importing tview into the state package.
+// tviewEscapePattern mirrors tview's Escape regex but with a permissive
+// character class so any [...] pair (including ones tview's stock parser
+// would ignore, like "[@alice]") is neutralised. Defined locally to avoid
+// importing tview into the state package.
 var tviewEscapePattern = regexp.MustCompile(`\[([^[\]]*)\]`)
 
-// escapeContent neutralises tview color tags inside user-supplied content
-// (nicks, message text). It is the in-tree equivalent of tview.Escape.
-func escapeContent(s string) string {
+// Escape neutralises tview color tags inside arbitrary content (nicks,
+// message text, channel-prefix labels). Any bracketed substring `[xxx]`
+// becomes `[xxx[]`, which tview renders as the literal `[xxx]`.
+//
+// This is the in-tree equivalent of tview.Escape, with a wider pattern so
+// non-color-shaped strings like `[@alice]` are also neutralised.
+func Escape(s string) string {
 	return tviewEscapePattern.ReplaceAllString(s, "[$1[]")
 }
 
@@ -71,15 +76,15 @@ func channelTag(name string, kind ChanKind) string {
 // trailing newline) for the main scroll pane.
 func formatMessage(m Message, kind ChanKind) string {
 	tag := channelTag(m.Channel, kind)
-	body := escapeContent(m.Text)
+	body := Escape(m.Text)
 	switch m.Kind {
 	case KindAction:
-		return tag + " * " + escapeContent(m.Nick) + " " + body
+		return tag + " * " + Escape(m.Nick) + " " + body
 	case KindNotice:
-		return tag + " -" + escapeContent(m.Nick) + "- " + body
+		return tag + " -" + Escape(m.Nick) + "- " + body
 	case KindServer:
 		return tag + " " + body
 	default: // KindPrivmsg
-		return tag + " <" + escapeContent(m.Nick) + "> " + body
+		return tag + " <" + Escape(m.Nick) + "> " + body
 	}
 }
