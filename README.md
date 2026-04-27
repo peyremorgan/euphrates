@@ -7,8 +7,8 @@ A terminal IRC client with a unified, group-toggleable chat view.
 Instead of channel tabs, every joined channel is assigned to one of 10 numeric
 **groups** (plus two special groups: server messages and private queries).
 Channel messages are interleaved in a single scroll pane prefixed with
-`[#channel]`. **Ctrl+1**…**Ctrl+0** toggles the visibility of groups 1-10
-(think `nmon` modules). **Alt+1**…**Alt+0** solos a numeric group (shows
+`[#channel]`. **Alt+1**…**Alt+0** toggles the visibility of groups 1-10
+(think `nmon` modules). **F1**…**F10** solos a numeric group (shows
 only that one numeric group). Solo does not change visibility of the
 special server/query groups. Bare digits stay reserved for text input in
 the composer.
@@ -49,8 +49,8 @@ capacities).
 
 | Key            | Action                                  |
 | -------------- | --------------------------------------- |
-| Ctrl+1..0      | Toggle visibility of numeric group 1-10 |
-| Alt+1..0       | Solo numeric group 1-10                 |
+| Alt+1..0       | Toggle visibility of numeric group 1-10 |
+| F1..F10        | Solo numeric group 1-10                 |
 | Ctrl-N         | Next channel (target)                   |
 | Ctrl-P         | Previous channel (target)               |
 | Up / Down      | Scroll main message history (input empty) |
