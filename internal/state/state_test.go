@@ -71,6 +71,23 @@ func TestEnsureChannel_Idempotent(t *testing.T) {
 	}
 }
 
+func TestNormalChannelCount_ExcludesQueriesAndServer(t *testing.T) {
+	s := newTestState()
+	s.EnsureChannel("#a")
+	s.EnsureChannel("#b")
+	s.EnsureChannel("alice")
+	s.EnsureChannel(ServerChannelName)
+
+	if got := s.NormalChannelCount(); got != 2 {
+		t.Errorf("normalChannelCount=%d want 2", got)
+	}
+
+	s.PartChannel("#a")
+	if got := s.NormalChannelCount(); got != 1 {
+		t.Errorf("after part normalChannelCount=%d want 1", got)
+	}
+}
+
 func TestEnsureChannel_CaseInsensitive(t *testing.T) {
 	s := newTestState()
 	s.EnsureChannel("#FoO")

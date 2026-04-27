@@ -31,13 +31,15 @@ type UI struct {
 
 	manualScroll bool
 
-	statusView *tview.TextView
-	mainView   *tview.TextView
-	eventsView *tview.TextView
-	promptView *tview.TextView
-	input      *tview.InputField
-	inputRow   *tview.Flex
-	root       *tview.Flex
+	statusView      *tview.TextView
+	statusCountView *tview.TextView
+	statusRow       *tview.Flex
+	mainView        *tview.TextView
+	eventsView      *tview.TextView
+	promptView      *tview.TextView
+	input           *tview.InputField
+	inputRow        *tview.Flex
+	root            *tview.Flex
 }
 
 // New builds a UI bound to the given state and Sender.
@@ -121,6 +123,19 @@ func (u *UI) buildLayout() {
 			Foreground(tview.Styles.PrimaryTextColor).
 			Background(tview.Styles.ContrastBackgroundColor),
 	)
+	u.statusCountView = tview.NewTextView().
+		SetDynamicColors(true).
+		SetWrap(false).
+		SetTextAlign(tview.AlignRight)
+	u.statusCountView.SetBackgroundColor(tview.Styles.ContrastBackgroundColor)
+	u.statusCountView.SetTextStyle(
+		tcell.StyleDefault.
+			Foreground(tview.Styles.PrimaryTextColor).
+			Background(tview.Styles.ContrastBackgroundColor),
+	)
+	u.statusRow = tview.NewFlex().SetDirection(tview.FlexColumn)
+	u.statusRow.AddItem(u.statusView, 0, 1, false)
+	u.statusRow.AddItem(u.statusCountView, 0, 0, false)
 	u.mainView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetScrollable(true).
@@ -141,7 +156,7 @@ func (u *UI) buildLayout() {
 	u.inputRow.AddItem(u.input, 0, 1, true)
 
 	u.root = tview.NewFlex().SetDirection(tview.FlexRow)
-	u.root.AddItem(u.statusView, 1, 0, false)
+	u.root.AddItem(u.statusRow, 1, 0, false)
 	u.root.AddItem(u.mainView, 0, 1, false)
 	u.root.AddItem(u.eventsView, 5, 0, false)
 	u.root.AddItem(u.inputRow, 1, 0, true)
@@ -158,6 +173,9 @@ func (u *UI) RefreshAll() {
 
 func (u *UI) refreshStatus() {
 	u.statusView.SetText(FormatStatus(u.state))
+	countText := FormatStatusCount(u.state)
+	u.statusCountView.SetText(countText)
+	u.statusRow.ResizeItem(u.statusCountView, tview.TaggedStringWidth(countText), 0)
 }
 
 func (u *UI) refreshMain() {

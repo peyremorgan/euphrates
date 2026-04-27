@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/rivo/tview"
@@ -46,6 +47,17 @@ func FormatStatus(s *state.State) string {
 	b.WriteByte(' ')
 	writeMarker(&b, "Q", s.IsVisible(state.GroupQueries))
 	return b.String()
+}
+
+// FormatStatusCount renders the normal-channel total shown on the right side
+// of the status row.
+func FormatStatusCount(s *state.State) string {
+	count := s.NormalChannelCount()
+	label := "Channels"
+	if count == 1 {
+		label = "Channel"
+	}
+	return state.Escape(strconv.Itoa(count) + " " + label)
 }
 
 // FormatPrompt renders the composer prompt for the current target, plus the

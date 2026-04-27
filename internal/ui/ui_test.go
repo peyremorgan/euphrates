@@ -265,6 +265,21 @@ func TestHandleKey_F1SoloPreservesSpecialGroups(t *testing.T) {
 	}
 }
 
+func TestRefreshStatus_UpdatesChannelCountView(t *testing.T) {
+	u, _ := newTestUI(t)
+	if got := u.statusCountView.GetText(true); got != "0 Channels" {
+		t.Fatalf("initial count=%q want %q", got, "0 Channels")
+	}
+
+	u.state.EnsureChannel("#a")
+	u.state.EnsureChannel("alice")
+	u.refreshStatus()
+
+	if got := u.statusCountView.GetText(true); got != "1 Channel" {
+		t.Errorf("count=%q want %q", got, "1 Channel")
+	}
+}
+
 func TestHandleKey_F10SolosGroup10(t *testing.T) {
 	u, _ := newTestUI(t)
 	ev := tcell.NewEventKey(tcell.KeyF10, 0, tcell.ModNone)

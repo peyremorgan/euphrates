@@ -75,6 +75,34 @@ func TestFormatStatus_NoTarget(t *testing.T) {
 	}
 }
 
+func TestFormatStatusCount_UsesSingularAndPlural(t *testing.T) {
+	s := newSt()
+	if got := FormatStatusCount(s); got != "0 Channels" {
+		t.Errorf("count=%q want %q", got, "0 Channels")
+	}
+
+	s.EnsureChannel("#foo")
+	if got := FormatStatusCount(s); got != "1 Channel" {
+		t.Errorf("count=%q want %q", got, "1 Channel")
+	}
+
+	s.EnsureChannel("#bar")
+	if got := FormatStatusCount(s); got != "2 Channels" {
+		t.Errorf("count=%q want %q", got, "2 Channels")
+	}
+}
+
+func TestFormatStatusCount_ExcludesQueriesAndServer(t *testing.T) {
+	s := newSt()
+	s.EnsureChannel("alice")
+	s.EnsureChannel(state.ServerChannelName)
+	s.EnsureChannel("#foo")
+
+	if got := FormatStatusCount(s); got != "1 Channel" {
+		t.Errorf("count=%q want %q", got, "1 Channel")
+	}
+}
+
 func TestFormatPrompt_Visible(t *testing.T) {
 	s := newSt()
 	s.EnsureChannel("#foo")

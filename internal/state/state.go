@@ -273,6 +273,19 @@ func (s *State) NumericGroupCount(g GroupID) int {
 	return s.counts[g]
 }
 
+// NormalChannelCount returns the total number of normal channels currently
+// tracked across all numeric groups. Queries and the server pseudo-channel are
+// excluded.
+func (s *State) NormalChannelCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	total := 0
+	for _, count := range s.counts {
+		total += count
+	}
+	return total
+}
+
 // ServerName returns the configured server label used in the status bar.
 func (s *State) ServerName() string {
 	s.mu.RLock()
