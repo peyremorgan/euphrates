@@ -67,31 +67,6 @@ func TestFormatStatus_DimsHidden(t *testing.T) {
 	}
 }
 
-func TestFormatStatus_TargetVisible(t *testing.T) {
-	s := newSt()
-	s.EnsureChannel("#foo")
-	got := FormatStatus(s)
-	if !strings.Contains(got, "▶ [#foo[]") {
-		t.Errorf("status missing target indicator: %q", got)
-	}
-}
-
-func TestFormatStatus_TargetDimWhenHidden(t *testing.T) {
-	s := newSt()
-	s.EnsureChannel("#foo")
-	c, _ := s.Channel("#foo")
-	s.SetVisible(c.Group, false)
-	got := FormatStatus(s)
-	// Find the position of the arrow and verify it's preceded by dim color.
-	idx := strings.Index(got, "▶")
-	if idx <= 0 {
-		t.Fatalf("no arrow in %q", got)
-	}
-	if !strings.HasPrefix(got[idx-len(state.DimColor()):], state.DimColor()) {
-		t.Errorf("target arrow not dim: %q", got)
-	}
-}
-
 func TestFormatStatus_NoTarget(t *testing.T) {
 	s := newSt()
 	got := FormatStatus(s)

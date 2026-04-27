@@ -45,25 +45,6 @@ func FormatStatus(s *state.State) string {
 	writeMarker(&b, "S", s.IsVisible(state.GroupServer))
 	b.WriteByte(' ')
 	writeMarker(&b, "Q", s.IsVisible(state.GroupQueries))
-
-	target := s.Target()
-	if target == "" {
-		return b.String()
-	}
-	c, ok := s.Channel(target)
-	if !ok {
-		return b.String()
-	}
-	b.WriteString("   ")
-	visible := s.IsVisible(c.Group)
-	color := state.ChannelColor(c.Name)
-	if !visible {
-		color = state.DimColor()
-	}
-	b.WriteString(color)
-	b.WriteString("▶ ")
-	b.WriteString(state.Escape("[" + channelDisplay(c) + "]"))
-	b.WriteString(state.ResetColor())
 	return b.String()
 }
 
