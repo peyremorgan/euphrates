@@ -188,6 +188,13 @@ func (u *UI) bindKeys() {
 // handleKey is exported-shaped (CamelCase semantics) but kept lower-case
 // because it's an internal capture. Returns nil to consume.
 func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
+	// Alt+digit solos a numeric group.
+	if ev.Modifiers()&tcell.ModAlt != 0 {
+		if g, ok := groupForRune(ev.Rune()); ok {
+			u.soloGroup(g)
+			return nil
+		}
+	}
 	// Ctrl+digit toggles a numeric group.
 	if ev.Modifiers()&tcell.ModCtrl != 0 {
 		if g, ok := groupForRune(ev.Rune()); ok {
@@ -227,6 +234,11 @@ func groupForRune(r rune) (state.GroupID, bool) {
 
 func (u *UI) toggleGroup(g state.GroupID) {
 	u.state.ToggleGroup(g)
+	u.refreshAfterStructuralChange()
+}
+
+func (u *UI) soloGroup(g state.GroupID) {
+	u.state.SoloNumericGroup(g)
 	u.refreshAfterStructuralChange()
 }
 

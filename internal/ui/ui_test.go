@@ -218,6 +218,37 @@ func TestHandleKey_CtrlDigitTogglesGroup(t *testing.T) {
 	}
 }
 
+func TestHandleKey_AltDigitSolosGroup(t *testing.T) {
+	u, _ := newTestUI(t)
+	ev := tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModAlt)
+	if u.handleKey(ev) != nil {
+		t.Error("Alt+1 not consumed")
+	}
+	for i := 0; i < state.NumGroups; i++ {
+		want := i == 0
+		if got := u.state.IsVisible(state.GroupID(i)); got != want {
+			t.Fatalf("group %d visible=%v want %v", i, got, want)
+		}
+	}
+}
+
+func TestHandleKey_AltDigitSoloPreservesSpecialGroups(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.SetVisible(state.GroupServer, false)
+	u.state.SetVisible(state.GroupQueries, true)
+
+	ev := tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModAlt)
+	if u.handleKey(ev) != nil {
+		t.Error("Alt+1 not consumed")
+	}
+	if u.state.IsVisible(state.GroupServer) {
+		t.Error("server visibility changed by solo")
+	}
+	if !u.state.IsVisible(state.GroupQueries) {
+		t.Error("queries visibility changed by solo")
+	}
+}
+
 func TestHandleKey_DigitWithoutCtrlPassesThrough(t *testing.T) {
 	u, _ := newTestUI(t)
 	ev := tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModNone)

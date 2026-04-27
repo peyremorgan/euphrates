@@ -174,6 +174,59 @@ func TestToggleGroup(t *testing.T) {
 	}
 }
 
+func TestSoloNumericGroup_OnlyTargetVisible(t *testing.T) {
+	s := newTestState()
+	s.SoloNumericGroup(GroupID(3))
+	for i := 0; i < NumGroups; i++ {
+		want := i == 3
+		if got := s.IsVisible(GroupID(i)); got != want {
+			t.Fatalf("group %d visible=%v want %v", i, got, want)
+		}
+	}
+}
+
+func TestSoloNumericGroup_SoloToSolo(t *testing.T) {
+	s := newTestState()
+	s.SoloNumericGroup(GroupID(1))
+	s.SoloNumericGroup(GroupID(4))
+	for i := 0; i < NumGroups; i++ {
+		want := i == 4
+		if got := s.IsVisible(GroupID(i)); got != want {
+			t.Fatalf("group %d visible=%v want %v", i, got, want)
+		}
+	}
+}
+
+func TestSoloNumericGroup_PreservesSpecialGroups(t *testing.T) {
+	s := newTestState()
+	s.SetVisible(GroupServer, false)
+	s.SetVisible(GroupQueries, true)
+
+	s.SoloNumericGroup(GroupID(0))
+
+	if s.IsVisible(GroupServer) {
+		t.Error("server visibility should be preserved")
+	}
+	if !s.IsVisible(GroupQueries) {
+		t.Error("queries visibility should be preserved")
+	}
+}
+
+func TestSoloNumericGroup_NonNumericNoop(t *testing.T) {
+	s := newTestState()
+	before := s.VisibleGroups()
+	s.SoloNumericGroup(GroupServer)
+	after := s.VisibleGroups()
+	if len(after) != len(before) {
+		t.Fatalf("visibility map size changed: before=%d after=%d", len(before), len(after))
+	}
+	for g, v := range before {
+		if after[g] != v {
+			t.Fatalf("visibility for group %d changed: before=%v after=%v", g, v, after[g])
+		}
+	}
+}
+
 func TestNextPrevChannel_CyclesAndSkipsServer(t *testing.T) {
 	s := newTestState()
 	s.EnsureChannel(ServerChannelName)

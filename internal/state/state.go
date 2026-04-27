@@ -217,6 +217,20 @@ func (s *State) ToggleGroup(g GroupID) bool {
 	return v
 }
 
+// SoloNumericGroup makes only the target numeric group visible, hiding the
+// other numeric groups. Special groups (server, queries) are left unchanged.
+func (s *State) SoloNumericGroup(g GroupID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !g.IsNumeric() {
+		return
+	}
+	for i := 0; i < NumGroups; i++ {
+		id := GroupID(i)
+		s.visible[id] = id == g
+	}
+}
+
 // SetVisible sets the visibility of group g.
 func (s *State) SetVisible(g GroupID, vis bool) {
 	s.mu.Lock()
