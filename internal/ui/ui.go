@@ -67,7 +67,7 @@ func (u *UI) OnMessage(msg state.Message) {
 	line, visible := u.state.AppendMessage(msg)
 	u.app.QueueUpdateDraw(func() {
 		if visible {
-			fmt.Fprintln(u.mainView, line)
+			_, _ = fmt.Fprintln(u.mainView, line)
 			u.mainView.ScrollToEnd()
 		}
 	})
@@ -153,7 +153,7 @@ func (u *UI) refreshStatus() {
 func (u *UI) refreshMain() {
 	u.mainView.Clear()
 	for _, line := range u.state.RenderVisible() {
-		fmt.Fprintln(u.mainView, line)
+		_, _ = fmt.Fprintln(u.mainView, line)
 	}
 	u.mainView.ScrollToEnd()
 }
@@ -161,7 +161,7 @@ func (u *UI) refreshMain() {
 func (u *UI) refreshEvents() {
 	u.eventsView.Clear()
 	for _, line := range u.state.Events() {
-		fmt.Fprintln(u.eventsView, line)
+		_, _ = fmt.Fprintln(u.eventsView, line)
 	}
 }
 
@@ -188,8 +188,8 @@ func (u *UI) bindKeys() {
 // handleKey is exported-shaped (CamelCase semantics) but kept lower-case
 // because it's an internal capture. Returns nil to consume.
 func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
-	// Alt+digit toggles a numeric group.
-	if ev.Modifiers()&tcell.ModAlt != 0 {
+	// Ctrl+digit toggles a numeric group.
+	if ev.Modifiers()&tcell.ModCtrl != 0 {
 		if g, ok := groupForRune(ev.Rune()); ok {
 			u.toggleGroup(g)
 			return nil
@@ -316,7 +316,7 @@ func (u *UI) sendTo(target, text string, kind state.MessageKind) {
 	// ForceTargetVisible above ensures `visible` is true, but we keep the
 	// guard to defend against future refactors.
 	if visible {
-		fmt.Fprintln(u.mainView, line)
+		_, _ = fmt.Fprintln(u.mainView, line)
 		u.mainView.ScrollToEnd()
 	}
 	// The forced-visibility may have flipped a group on; refresh the

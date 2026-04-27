@@ -3,7 +3,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
 	"euphrates/internal/state"
@@ -117,10 +116,4 @@ func runeWidth(s string) int {
 		n++
 	}
 	return n
-}
-
-// formatEvent is a tiny convenience used by callers that want a compact
-// event line. The arrow marker conveys direction without coloring noise.
-func formatEvent(arrow, body string) string {
-	return fmt.Sprintf("%s %s", arrow, body)
 }

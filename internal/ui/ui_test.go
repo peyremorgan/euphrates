@@ -204,21 +204,21 @@ func TestHandleSubmit_UnknownCommand(t *testing.T) {
 
 // --- handleKey ------------------------------------------------------------
 
-func TestHandleKey_AltDigitTogglesGroup(t *testing.T) {
+func TestHandleKey_CtrlDigitTogglesGroup(t *testing.T) {
 	u, _ := newTestUI(t)
 	if !u.state.IsVisible(state.GroupID(0)) {
 		t.Fatal("default visibility")
 	}
-	ev := tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModAlt)
+	ev := tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModCtrl)
 	if u.handleKey(ev) != nil {
-		t.Error("Alt+1 not consumed")
+		t.Error("Ctrl+1 not consumed")
 	}
 	if u.state.IsVisible(state.GroupID(0)) {
-		t.Error("group 0 still visible after Alt+1")
+		t.Error("group 0 still visible after Ctrl+1")
 	}
 }
 
-func TestHandleKey_DigitWithoutAltPassesThrough(t *testing.T) {
+func TestHandleKey_DigitWithoutCtrlPassesThrough(t *testing.T) {
 	u, _ := newTestUI(t)
 	ev := tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModNone)
 	if got := u.handleKey(ev); got != ev {
