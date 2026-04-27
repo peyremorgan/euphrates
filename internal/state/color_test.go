@@ -51,3 +51,37 @@ func TestCanonicalKey(t *testing.T) {
 		t.Errorf("canonicalKey didn't lower-case")
 	}
 }
+
+func TestUserColor_Deterministic(t *testing.T) {
+	a := UserColor("Ada")
+	b := UserColor("Ada")
+	if a != b {
+		t.Errorf("not deterministic: %q vs %q", a, b)
+	}
+}
+
+func TestUserColor_CaseInsensitive(t *testing.T) {
+	if UserColor("Alice") != UserColor("alice") {
+		t.Errorf("case sensitivity leaked into nick hash")
+	}
+}
+
+func TestUserColor_FromPalette(t *testing.T) {
+	got := UserColor("anything")
+	found := false
+	for _, c := range channelPalette {
+		if c == got {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("color %q not in palette", got)
+	}
+}
+
+func TestChannelAndUserColor_SameSelectionLogic(t *testing.T) {
+	if ChannelColor("#Alice") != UserColor("#Alice") {
+		t.Errorf("channel and user color selection diverged")
+	}
+}

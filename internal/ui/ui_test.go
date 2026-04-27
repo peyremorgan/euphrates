@@ -131,7 +131,8 @@ func TestHandleSubmit_PlainMessage(t *testing.T) {
 	}
 	// Local echo should land in state.
 	rendered := u.state.RenderVisible()
-	if len(rendered) != 1 || !strings.Contains(rendered[0], "<me>") {
+	wantNick := "<" + state.UserColor("me") + "me" + state.ResetColor() + ">"
+	if len(rendered) != 1 || !strings.Contains(rendered[0], wantNick) {
 		t.Errorf("echo missing: %v", rendered)
 	}
 }

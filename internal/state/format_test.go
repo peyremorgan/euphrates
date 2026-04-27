@@ -56,7 +56,8 @@ func TestChannelTag_ServerPrefix(t *testing.T) {
 func TestFormatMessage_Privmsg(t *testing.T) {
 	m := Message{Channel: "#go", Nick: "ada", Text: "hi", Kind: KindPrivmsg}
 	got := formatMessage(m, ChanNormal)
-	if !strings.Contains(got, "<ada>") {
+	wantNick := UserColor("ada") + "ada" + resetColor
+	if !strings.Contains(got, "<"+wantNick+">") {
 		t.Errorf("missing <nick>: %q", got)
 	}
 	if !strings.HasSuffix(got, "hi") {
@@ -67,7 +68,8 @@ func TestFormatMessage_Privmsg(t *testing.T) {
 func TestFormatMessage_Action(t *testing.T) {
 	m := Message{Channel: "#go", Nick: "ada", Text: "waves", Kind: KindAction}
 	got := formatMessage(m, ChanNormal)
-	if !strings.Contains(got, " * ada waves") {
+	wantNick := UserColor("ada") + "ada" + resetColor
+	if !strings.Contains(got, " * "+wantNick+" waves") {
 		t.Errorf("action body wrong: %q", got)
 	}
 }
@@ -75,7 +77,8 @@ func TestFormatMessage_Action(t *testing.T) {
 func TestFormatMessage_Notice(t *testing.T) {
 	m := Message{Channel: "#go", Nick: "srv", Text: "hello", Kind: KindNotice}
 	got := formatMessage(m, ChanNormal)
-	if !strings.Contains(got, " -srv- hello") {
+	wantNick := UserColor("srv") + "srv" + resetColor
+	if !strings.Contains(got, " -"+wantNick+"- hello") {
 		t.Errorf("notice body wrong: %q", got)
 	}
 }
@@ -96,5 +99,17 @@ func TestFormatMessage_EscapesUserContent(t *testing.T) {
 	got := formatMessage(m, ChanNormal)
 	if !strings.Contains(got, "[red[]") {
 		t.Errorf("user text not escaped: %q", got)
+	}
+	if !strings.Contains(got, UserColor("bob")+"bob"+resetColor) {
+		t.Errorf("nick not colorized: %q", got)
+	}
+}
+
+func TestFormatMessage_EscapesNickBeforeColor(t *testing.T) {
+	m := Message{Channel: "#x", Nick: "[@alice]", Text: "hi", Kind: KindPrivmsg}
+	got := formatMessage(m, ChanNormal)
+	wantNick := UserColor("[@alice]") + "[@alice[]" + resetColor
+	if !strings.Contains(got, "<"+wantNick+">") {
+		t.Errorf("nick not escaped+colorized correctly: %q", got)
 	}
 }

@@ -41,12 +41,24 @@ func canonicalKey(name string) string {
 	return strings.ToLower(name)
 }
 
-// ChannelColor returns the tview color tag deterministically chosen for the
-// given channel name. The lookup is case-insensitive.
-func ChannelColor(name string) string {
+// deterministicColorTag returns a stable palette color tag for a name.
+// It is shared by both channel and nick color helpers.
+func deterministicColorTag(name string) string {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(canonicalKey(name)))
 	return channelPalette[int(h.Sum32())%len(channelPalette)]
+}
+
+// ChannelColor returns the tview color tag deterministically chosen for the
+// given channel name. The lookup is case-insensitive.
+func ChannelColor(name string) string {
+	return deterministicColorTag(name)
+}
+
+// UserColor returns the tview color tag deterministically chosen for the
+// given nick. The lookup is case-insensitive.
+func UserColor(nick string) string {
+	return deterministicColorTag(nick)
 }
 
 // DimColor returns the color tag used for hidden channels (e.g. on the

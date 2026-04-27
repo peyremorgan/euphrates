@@ -77,14 +77,18 @@ func channelTag(name string, kind ChanKind) string {
 func formatMessage(m Message, kind ChanKind) string {
 	tag := channelTag(m.Channel, kind)
 	body := Escape(m.Text)
+	nick := Escape(m.Nick)
+	if nick != "" {
+		nick = UserColor(m.Nick) + nick + resetColor
+	}
 	switch m.Kind {
 	case KindAction:
-		return tag + " * " + Escape(m.Nick) + " " + body
+		return tag + " * " + nick + " " + body
 	case KindNotice:
-		return tag + " -" + Escape(m.Nick) + "- " + body
+		return tag + " -" + nick + "- " + body
 	case KindServer:
 		return tag + " " + body
 	default: // KindPrivmsg
-		return tag + " <" + Escape(m.Nick) + "> " + body
+		return tag + " <" + nick + "> " + body
 	}
 }
