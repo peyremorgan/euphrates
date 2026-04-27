@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -58,7 +59,22 @@ func newTestUI(t *testing.T) (*UI, *fakeSender) {
 	t.Helper()
 	s := state.New(state.Config{MessageCap: 100, EventCap: 5})
 	fs := &fakeSender{nick: "me"}
-	return New(s, fs), fs
+	u := New(s, fs)
+	u.mainView.SetRect(0, 0, 80, 6)
+	return u, fs
+}
+
+func addLines(t *testing.T, u *UI, channel string, n int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		u.state.AppendMessage(state.Message{
+			Channel: channel,
+			Nick:    "n",
+			Text:    fmt.Sprintf("m%d", i),
+			Kind:    state.KindPrivmsg,
+		})
+	}
+	u.refreshMain()
 }
 
 // --- groupForRune ----------------------------------------------------------
@@ -294,6 +310,79 @@ func TestHandleKey_CtrlCQuits(t *testing.T) {
 	}
 	if fs.quitN != 1 {
 		t.Errorf("quitN=%d", fs.quitN)
+	}
+}
+
+func TestHandleKey_UpArrowScrollsWhenInputEmpty(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.EnsureChannel("#a")
+	addLines(t, u, "#a", 20)
+
+	ev := tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+	if got := u.handleKey(ev); got != nil {
+		t.Error("Up arrow not consumed when input is empty")
+	}
+	if !u.manualScroll {
+		t.Error("manualScroll should be enabled by Up arrow")
+	}
+}
+
+func TestHandleKey_UpArrowPassesThroughWhenInputHasText(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.input.SetText("typing")
+
+	ev := tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+	if got := u.handleKey(ev); got != ev {
+		t.Error("Up arrow should pass through when input has text")
+	}
+}
+
+func TestHandleKey_DownArrowAtBottomDisablesManual(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.EnsureChannel("#a")
+	addLines(t, u, "#a", 1)
+	u.mainView.ScrollToEnd()
+	u.manualScroll = true
+
+	ev := tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+	if got := u.handleKey(ev); got != nil {
+		t.Error("Down arrow not consumed when input is empty")
+	}
+	if u.manualScroll {
+		t.Error("manualScroll should be disabled at bottom")
+	}
+}
+
+func TestRefreshMain_PreservesOffsetWhenManual(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.EnsureChannel("#a")
+	addLines(t, u, "#a", 20)
+	u.mainView.ScrollToBeginning()
+	u.manualScroll = true
+	wantRow, wantCol := u.mainView.GetScrollOffset()
+
+	u.refreshMain()
+	gotRow, gotCol := u.mainView.GetScrollOffset()
+	if gotRow != wantRow || gotCol != wantCol {
+		t.Errorf("offset changed during manual refresh: got (%d,%d), want (%d,%d)", gotRow, gotCol, wantRow, wantCol)
+	}
+}
+
+func TestSendTo_ManualScrollSkipsAutoFollow(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.state.EnsureChannel("#a")
+	addLines(t, u, "#a", 20)
+	u.mainView.ScrollToBeginning()
+	u.manualScroll = true
+	wantRow, _ := u.mainView.GetScrollOffset()
+
+	u.sendTo("#a", "hello", state.KindPrivmsg)
+	if len(fs.privmsgs) != 1 {
+		t.Fatalf("expected one outbound message, got %d", len(fs.privmsgs))
+	}
+	gotRow, _ := u.mainView.GetScrollOffset()
+	if gotRow != wantRow {
+		t.Errorf("sendTo forced auto-follow while manual scrolling: got row %d want %d", gotRow, wantRow)
 	}
 }
 

@@ -29,6 +29,8 @@ type UI struct {
 	state  *state.State
 	sender Sender
 
+	manualScroll bool
+
 	statusView *tview.TextView
 	mainView   *tview.TextView
 	eventsView *tview.TextView
@@ -68,7 +70,9 @@ func (u *UI) OnMessage(msg state.Message) {
 	u.app.QueueUpdateDraw(func() {
 		if visible {
 			_, _ = fmt.Fprintln(u.mainView, line)
-			u.mainView.ScrollToEnd()
+			if !u.manualScroll {
+				u.mainView.ScrollToEnd()
+			}
 		}
 	})
 }
@@ -157,9 +161,14 @@ func (u *UI) refreshStatus() {
 }
 
 func (u *UI) refreshMain() {
+	row, col := u.mainView.GetScrollOffset()
 	u.mainView.Clear()
 	for _, line := range u.state.RenderVisible() {
 		_, _ = fmt.Fprintln(u.mainView, line)
+	}
+	if u.manualScroll {
+		u.mainView.ScrollTo(row, col)
+		return
 	}
 	u.mainView.ScrollToEnd()
 }
@@ -209,6 +218,16 @@ func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		}
 	}
 	switch ev.Key() {
+	case tcell.KeyUp:
+		if ev.Modifiers() == tcell.ModNone && u.input.GetText() == "" {
+			u.scrollMainUp()
+			return nil
+		}
+	case tcell.KeyDown:
+		if ev.Modifiers() == tcell.ModNone && u.input.GetText() == "" {
+			u.scrollMainDown()
+			return nil
+		}
 	case tcell.KeyCtrlN:
 		u.state.NextChannel()
 		u.refreshStatus()
@@ -246,6 +265,41 @@ func (u *UI) toggleGroup(g state.GroupID) {
 func (u *UI) soloGroup(g state.GroupID) {
 	u.state.SoloNumericGroup(g)
 	u.refreshAfterStructuralChange()
+}
+
+func (u *UI) scrollMainUp() {
+	row, col := u.mainView.GetScrollOffset()
+	if row > 0 {
+		u.mainView.ScrollTo(row-1, col)
+	}
+	u.manualScroll = true
+}
+
+func (u *UI) scrollMainDown() {
+	if u.mainAtBottom() {
+		u.manualScroll = false
+		u.mainView.ScrollToEnd()
+		return
+	}
+	row, col := u.mainView.GetScrollOffset()
+	u.mainView.ScrollTo(row+1, col)
+	u.manualScroll = !u.mainAtBottom()
+	if !u.manualScroll {
+		u.mainView.ScrollToEnd()
+	}
+}
+
+func (u *UI) mainAtBottom() bool {
+	row, _ := u.mainView.GetScrollOffset()
+	_, _, _, h := u.mainView.GetRect()
+	if h <= 0 {
+		h = 1
+	}
+	maxRow := u.mainView.GetWrappedLineCount() - h
+	if maxRow < 0 {
+		maxRow = 0
+	}
+	return row >= maxRow
 }
 
 // onInputDone fires when the InputField completes. Enter submits; Esc clears.
@@ -335,7 +389,9 @@ func (u *UI) sendTo(target, text string, kind state.MessageKind) {
 	// guard to defend against future refactors.
 	if visible {
 		_, _ = fmt.Fprintln(u.mainView, line)
-		u.mainView.ScrollToEnd()
+		if !u.manualScroll {
+			u.mainView.ScrollToEnd()
+		}
 	}
 	// The forced-visibility may have flipped a group on; refresh the
 	// indicators so the user can see what changed.
