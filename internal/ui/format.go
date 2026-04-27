@@ -104,7 +104,7 @@ func brailleForCount(n int) string {
 	if n < 0 {
 		n = 0
 	}
-	glyphs := [9]string{"⠀", "⠁", "⠃", "⠇", "⠏", "⠟", "⠿", "⣟", full}
+	glyphs := [9]string{"⠀", "⡀", "⡄", "⡆", "⡇", "⣇", "⣧", "⣷", full}
 	return glyphs[n]
 }
 

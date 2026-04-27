@@ -49,7 +49,7 @@ func TestFormatStatus_ShowsBrailleGroupCounts(t *testing.T) {
 	s := newSt()
 	s.EnsureChannel("#chan")
 	got := FormatStatus(s)
-	if !strings.Contains(got, "1⠁") {
+	if !strings.Contains(got, "1⡀") {
 		t.Errorf("group 1 count not rendered: %q", got)
 	}
 	if !strings.Contains(got, "2⠀") {
@@ -149,7 +149,7 @@ func TestBrailleForCount_ProgressiveAndSaturated(t *testing.T) {
 		want  string
 	}{
 		{0, "⠀"},
-		{4, "⠏"},
+		{4, "⡇"},
 		{8, "⣿"},
 		{99, "⣿"},
 	}
