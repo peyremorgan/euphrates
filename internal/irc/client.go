@@ -83,6 +83,18 @@ func New(cfg Config, h Handlers) (*Client, error) {
 // goroutine that should drive callbacks.
 func (c *Client) Connect() error { return c.conn.Connect() }
 
+// SetHandlers replaces the inbound-event handlers. Self is always overridden
+// to track the live ircevent connection, so callers can leave it nil. Useful
+// when the UI needs the Client to construct its Sender before its own
+// callback methods are bound.
+//
+// Must be called before Connect; not safe to call concurrently with active
+// callbacks.
+func (c *Client) SetHandlers(h Handlers) {
+	c.handlers = h
+	c.handlers.Self = func() string { return c.conn.CurrentNick() }
+}
+
 // Loop blocks until the connection ends. Call from a dedicated goroutine.
 func (c *Client) Loop() { c.conn.Loop() }
 
