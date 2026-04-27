@@ -220,25 +220,25 @@ func TestHandleSubmit_UnknownCommand(t *testing.T) {
 
 // --- handleKey ------------------------------------------------------------
 
-func TestHandleKey_CtrlDigitTogglesGroup(t *testing.T) {
+func TestHandleKey_AltDigitTogglesGroup(t *testing.T) {
 	u, _ := newTestUI(t)
 	if !u.state.IsVisible(state.GroupID(0)) {
 		t.Fatal("default visibility")
 	}
-	ev := tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModCtrl)
-	if u.handleKey(ev) != nil {
-		t.Error("Ctrl+1 not consumed")
-	}
-	if u.state.IsVisible(state.GroupID(0)) {
-		t.Error("group 0 still visible after Ctrl+1")
-	}
-}
-
-func TestHandleKey_AltDigitSolosGroup(t *testing.T) {
-	u, _ := newTestUI(t)
 	ev := tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModAlt)
 	if u.handleKey(ev) != nil {
 		t.Error("Alt+1 not consumed")
+	}
+	if u.state.IsVisible(state.GroupID(0)) {
+		t.Error("group 0 still visible after Alt+1")
+	}
+}
+
+func TestHandleKey_F1SolosGroup(t *testing.T) {
+	u, _ := newTestUI(t)
+	ev := tcell.NewEventKey(tcell.KeyF1, 0, tcell.ModNone)
+	if u.handleKey(ev) != nil {
+		t.Error("F1 not consumed")
 	}
 	for i := 0; i < state.NumGroups; i++ {
 		want := i == 0
@@ -248,14 +248,14 @@ func TestHandleKey_AltDigitSolosGroup(t *testing.T) {
 	}
 }
 
-func TestHandleKey_AltDigitSoloPreservesSpecialGroups(t *testing.T) {
+func TestHandleKey_F1SoloPreservesSpecialGroups(t *testing.T) {
 	u, _ := newTestUI(t)
 	u.state.SetVisible(state.GroupServer, false)
 	u.state.SetVisible(state.GroupQueries, true)
 
-	ev := tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModAlt)
+	ev := tcell.NewEventKey(tcell.KeyF1, 0, tcell.ModNone)
 	if u.handleKey(ev) != nil {
-		t.Error("Alt+1 not consumed")
+		t.Error("F1 not consumed")
 	}
 	if u.state.IsVisible(state.GroupServer) {
 		t.Error("server visibility changed by solo")
@@ -265,7 +265,21 @@ func TestHandleKey_AltDigitSoloPreservesSpecialGroups(t *testing.T) {
 	}
 }
 
-func TestHandleKey_DigitWithoutCtrlPassesThrough(t *testing.T) {
+func TestHandleKey_F10SolosGroup10(t *testing.T) {
+	u, _ := newTestUI(t)
+	ev := tcell.NewEventKey(tcell.KeyF10, 0, tcell.ModNone)
+	if u.handleKey(ev) != nil {
+		t.Error("F10 not consumed")
+	}
+	for i := 0; i < state.NumGroups; i++ {
+		want := i == state.NumGroups-1
+		if got := u.state.IsVisible(state.GroupID(i)); got != want {
+			t.Fatalf("group %d visible=%v want %v", i, got, want)
+		}
+	}
+}
+
+func TestHandleKey_DigitWithoutAltPassesThrough(t *testing.T) {
 	u, _ := newTestUI(t)
 	ev := tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModNone)
 	if got := u.handleKey(ev); got != ev {
@@ -273,6 +287,17 @@ func TestHandleKey_DigitWithoutCtrlPassesThrough(t *testing.T) {
 	}
 	if !u.state.IsVisible(state.GroupID(0)) {
 		t.Error("group 0 toggled by bare digit")
+	}
+}
+
+func TestHandleKey_CtrlDigitPassesThrough(t *testing.T) {
+	u, _ := newTestUI(t)
+	ev := tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModCtrl)
+	if got := u.handleKey(ev); got != ev {
+		t.Error("Ctrl+1 was consumed")
+	}
+	if !u.state.IsVisible(state.GroupID(0)) {
+		t.Error("group 0 toggled by Ctrl+1")
 	}
 }
 

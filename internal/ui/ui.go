@@ -203,21 +203,20 @@ func (u *UI) bindKeys() {
 // handleKey is exported-shaped (CamelCase semantics) but kept lower-case
 // because it's an internal capture. Returns nil to consume.
 func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
-	// Alt+digit solos a numeric group.
+	// Alt+digit toggles a numeric group.
 	if ev.Modifiers()&tcell.ModAlt != 0 {
-		if g, ok := groupForRune(ev.Rune()); ok {
-			u.soloGroup(g)
-			return nil
-		}
-	}
-	// Ctrl+digit toggles a numeric group.
-	if ev.Modifiers()&tcell.ModCtrl != 0 {
 		if g, ok := groupForRune(ev.Rune()); ok {
 			u.toggleGroup(g)
 			return nil
 		}
 	}
 	switch ev.Key() {
+	case tcell.KeyF1, tcell.KeyF2, tcell.KeyF3, tcell.KeyF4, tcell.KeyF5,
+		tcell.KeyF6, tcell.KeyF7, tcell.KeyF8, tcell.KeyF9, tcell.KeyF10:
+		if g, ok := groupForFunctionKey(ev.Key()); ok {
+			u.soloGroup(g)
+			return nil
+		}
 	case tcell.KeyUp:
 		if ev.Modifiers() == tcell.ModNone && u.input.GetText() == "" {
 			u.scrollMainUp()
@@ -252,6 +251,17 @@ func groupForRune(r rune) (state.GroupID, bool) {
 		return state.GroupID(r - '1'), true
 	}
 	if r == '0' {
+		return state.GroupID(state.NumGroups - 1), true
+	}
+	return 0, false
+}
+
+// groupForFunctionKey maps F1..F10 -> 0..9.
+func groupForFunctionKey(k tcell.Key) (state.GroupID, bool) {
+	if k >= tcell.KeyF1 && k <= tcell.KeyF9 {
+		return state.GroupID(k - tcell.KeyF1), true
+	}
+	if k == tcell.KeyF10 {
 		return state.GroupID(state.NumGroups - 1), true
 	}
 	return 0, false
