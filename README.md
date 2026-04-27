@@ -8,8 +8,10 @@ Instead of channel tabs, every joined channel is assigned to one of 10 numeric
 **groups** (plus two special groups: server messages and private queries).
 Channel messages are interleaved in a single scroll pane prefixed with
 `[#channel]`. **Ctrl+1**…**Ctrl+0** toggles the visibility of groups 1-10
-(think `nmon` modules). Bare digits stay reserved for text input in the
-composer.
+(think `nmon` modules). **Alt+1**…**Alt+0** solos a numeric group (shows
+only that one numeric group). Solo does not change visibility of the
+special server/query groups. Bare digits stay reserved for text input in
+the composer.
 
 The composer is prefixed with the current target channel in brackets; the
 prefix dims when the target's group is hidden, and submitting a message
@@ -48,6 +50,7 @@ capacities).
 | Key            | Action                                  |
 | -------------- | --------------------------------------- |
 | Ctrl+1..0      | Toggle visibility of numeric group 1-10 |
+| Alt+1..0       | Solo numeric group 1-10                 |
 | Ctrl-N         | Next channel (target)                   |
 | Ctrl-P         | Previous channel (target)               |
 | Ctrl-C         | Quit                                    |
