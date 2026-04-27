@@ -3,6 +3,7 @@ module euphrates
 go 1.26
 
 require (
+	github.com/ergochat/irc-go v0.6.0
 	github.com/gdamore/tcell/v2 v2.13.9
 	github.com/rivo/tview v0.42.0
 )
