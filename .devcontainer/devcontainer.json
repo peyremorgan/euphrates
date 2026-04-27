@@ -1,0 +1,13 @@
+{
+  "name": "euphrates",
+  "image": "mcr.microsoft.com/devcontainers/go:1-bookworm",
+  "postCreateCommand": "go mod download",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "github.copilot-chat"
+      ]
+    }
+  }
+}
