@@ -116,6 +116,99 @@ func TestRefreshSeparator_FallsBackToMainWidth(t *testing.T) {
 	}
 }
 
+func TestEventsViewHeight(t *testing.T) {
+	cases := []struct {
+		name  string
+		lines int
+		want  int
+	}{
+		{name: "empty collapses", lines: 0, want: 0},
+		{name: "single line", lines: 1, want: 1},
+		{name: "under max", lines: 4, want: 4},
+		{name: "at max", lines: 5, want: 5},
+		{name: "over max caps", lines: 99, want: 5},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := eventsViewHeight(tc.lines); got != tc.want {
+				t.Fatalf("eventsViewHeight(%d)=%d want %d", tc.lines, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRefreshEvents_ResizesPanelHeight(t *testing.T) {
+	cases := []struct {
+		name   string
+		events int
+		wantH  int
+	}{
+		{name: "zero events collapse", events: 0, wantH: 0},
+		{name: "three events", events: 3, wantH: 3},
+		{name: "over cap", events: 10, wantH: 5},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			u, _ := newTestUI(t)
+			for i := 0; i < tc.events; i++ {
+				u.state.AddEvent(fmt.Sprintf("event %d", i))
+			}
+
+			u.refreshEvents()
+			drawUIRoot(t, u, 80, 20)
+
+			_, _, _, gotH := u.eventsView.GetRect()
+			if gotH != tc.wantH {
+				t.Fatalf("eventsView height=%d want %d", gotH, tc.wantH)
+			}
+		})
+	}
+}
+
+func TestRefreshEvents_GrowsAndShrinksPanelHeight(t *testing.T) {
+	u, _ := newTestUI(t)
+
+	u.refreshEvents()
+	drawUIRoot(t, u, 80, 20)
+	_, _, _, h0 := u.eventsView.GetRect()
+	if h0 != 0 {
+		t.Fatalf("initial eventsView height=%d want 0", h0)
+	}
+
+	u.state.AddEvent("a")
+	u.state.AddEvent("b")
+	u.refreshEvents()
+	drawUIRoot(t, u, 80, 20)
+	_, _, _, h2 := u.eventsView.GetRect()
+	if h2 != 2 {
+		t.Fatalf("eventsView height after 2 events=%d want 2", h2)
+	}
+
+	u.state.AddEvent("c")
+	u.state.AddEvent("d")
+	u.state.AddEvent("e")
+	u.refreshEvents()
+	drawUIRoot(t, u, 80, 20)
+	_, _, _, h5 := u.eventsView.GetRect()
+	if h5 != 5 {
+		t.Fatalf("eventsView height after 5 events=%d want 5", h5)
+	}
+}
+
+func drawUIRoot(t *testing.T, u *UI, width, height int) {
+	t.Helper()
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("screen init: %v", err)
+	}
+	defer screen.Fini()
+
+	screen.SetSize(width, height)
+	u.root.SetRect(0, 0, width, height)
+	u.root.Draw(screen)
+}
+
 // --- groupForRune ----------------------------------------------------------
 
 func TestGroupForRune(t *testing.T) {

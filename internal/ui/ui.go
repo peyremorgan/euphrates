@@ -44,6 +44,7 @@ type UI struct {
 }
 
 const dottedSeparatorRune = "┄"
+const maxEventsViewRows = 5
 
 // New builds a UI bound to the given state and Sender.
 func New(s *state.State, sender Sender) *UI {
@@ -204,10 +205,22 @@ func (u *UI) refreshMain() {
 }
 
 func (u *UI) refreshEvents() {
+	events := u.state.Events()
+	u.root.ResizeItem(u.eventsView, eventsViewHeight(len(events)), 0)
 	u.eventsView.Clear()
-	for _, line := range u.state.Events() {
+	for _, line := range events {
 		_, _ = fmt.Fprintln(u.eventsView, line)
 	}
+}
+
+func eventsViewHeight(lines int) int {
+	if lines <= 0 {
+		return 0
+	}
+	if lines > maxEventsViewRows {
+		return maxEventsViewRows
+	}
+	return lines
 }
 
 func (u *UI) refreshSeparator() {
