@@ -6,6 +6,7 @@
     "vscode": {
       "extensions": [
         "golang.go",
+        "github.copilot",
         "github.copilot-chat"
       ]
     }
