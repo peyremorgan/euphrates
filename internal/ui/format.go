@@ -31,7 +31,7 @@ func FormatStatus(s *state.State) string {
 	if serverName == "" {
 		serverName = "server"
 	}
-	b.WriteString("[white::b]")
+	b.WriteString(state.StatusPrimaryTag())
 	b.WriteString(state.Escape(serverName))
 	b.WriteString(state.ResetColor())
 	b.WriteString("  ")
@@ -116,7 +116,7 @@ func channelDisplay(c state.Channel) string {
 // The token is bold-bright when visible, dim when hidden.
 func writeMarker(b *strings.Builder, ch string, visible bool) {
 	if visible {
-		b.WriteString("[white::b]")
+		b.WriteString(state.StatusPrimaryTag())
 	} else {
 		b.WriteString(state.DimColor())
 	}

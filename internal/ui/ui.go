@@ -122,24 +122,26 @@ func (u *UI) OnPart(channel string) {
 // --- layout & refresh -------------------------------------------------------
 
 func (u *UI) buildLayout() {
+	chrome := state.ActiveChromeTheme()
+
 	u.statusView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(false)
-	u.statusView.SetBackgroundColor(tview.Styles.ContrastBackgroundColor)
+	u.statusView.SetBackgroundColor(tcell.GetColor(chrome.StatusBackground))
 	u.statusView.SetTextStyle(
 		tcell.StyleDefault.
-			Foreground(tview.Styles.PrimaryTextColor).
-			Background(tview.Styles.ContrastBackgroundColor),
+			Foreground(tcell.GetColor(chrome.StatusForeground)).
+			Background(tcell.GetColor(chrome.StatusBackground)),
 	)
 	u.statusCountView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(false).
 		SetTextAlign(tview.AlignRight)
-	u.statusCountView.SetBackgroundColor(tview.Styles.ContrastBackgroundColor)
+	u.statusCountView.SetBackgroundColor(tcell.GetColor(chrome.StatusBackground))
 	u.statusCountView.SetTextStyle(
 		tcell.StyleDefault.
-			Foreground(tview.Styles.PrimaryTextColor).
-			Background(tview.Styles.ContrastBackgroundColor),
+			Foreground(tcell.GetColor(chrome.StatusForeground)).
+			Background(tcell.GetColor(chrome.StatusBackground)),
 	)
 	u.statusRow = tview.NewFlex().SetDirection(tview.FlexColumn)
 	u.statusRow.AddItem(u.statusView, 0, 1, false)
@@ -155,9 +157,11 @@ func (u *UI) buildLayout() {
 	u.eventsView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(true)
+	u.eventsView.SetTextColor(tcell.GetColor(chrome.EventsForeground))
 	u.promptView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(false)
+	u.promptView.SetTextColor(tcell.GetColor(chrome.PromptForeground))
 
 	u.input = tview.NewInputField()
 	u.input.SetDoneFunc(u.onInputDone)
@@ -231,7 +235,13 @@ func (u *UI) refreshSeparator() {
 	if width <= 0 {
 		_, _, width, _ = u.mainView.GetRect()
 	}
-	u.separatorView.SetText(dottedSeparator(width))
+	sep := dottedSeparator(width)
+	if sep == "" {
+		u.separatorView.SetText("")
+		return
+	}
+	sepColor := state.ActiveChromeTheme().Separator
+	u.separatorView.SetText("[" + sepColor + "]" + sep + state.ResetColor())
 }
 
 func dottedSeparator(width int) string {

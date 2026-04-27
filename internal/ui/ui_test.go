@@ -97,8 +97,8 @@ func TestRefreshSeparator_UsesSeparatorWidth(t *testing.T) {
 
 	u.refreshSeparator()
 
-	want := strings.Repeat(dottedSeparatorRune, 12)
-	if got := u.separatorView.GetText(true); got != want {
+	want := "[" + state.ActiveChromeTheme().Separator + "]" + strings.Repeat(dottedSeparatorRune, 12) + state.ResetColor()
+	if got := u.separatorView.GetText(false); got != want {
 		t.Fatalf("separator text=%q want %q", got, want)
 	}
 }
@@ -110,8 +110,8 @@ func TestRefreshSeparator_FallsBackToMainWidth(t *testing.T) {
 
 	u.refreshSeparator()
 
-	want := strings.Repeat(dottedSeparatorRune, 9)
-	if got := u.separatorView.GetText(true); got != want {
+	want := "[" + state.ActiveChromeTheme().Separator + "]" + strings.Repeat(dottedSeparatorRune, 9) + state.ResetColor()
+	if got := u.separatorView.GetText(false); got != want {
 		t.Fatalf("separator text=%q want %q", got, want)
 	}
 }

@@ -6,33 +6,19 @@ import (
 )
 
 // channelPalette is the deterministic per-channel color palette, encoded as
-// tview color tags. The set was chosen to be readable on both light and dark
-// terminal backgrounds.
-var channelPalette = []string{
-	"[#5fafff]", // sky blue
-	"[#5fd75f]", // green
-	"[#ffaf00]", // amber
-	"[#ff5faf]", // pink
-	"[#5fffff]", // cyan
-	"[#ffff5f]", // yellow
-	"[#af87ff]", // violet
-	"[#ff875f]", // salmon
-	"[#5fd7af]", // teal
-	"[#d75f87]", // magenta
-	"[#87afff]", // periwinkle
-	"[#afff87]", // chartreuse
-	"[#ffaf87]", // peach
-	"[#d7afff]", // lavender
-	"[#87d7d7]", // mist
-	"[#d7d75f]", // olive
-}
+// tview color tags. It is seeded from the active theme profile.
+var channelPalette []string
 
 // dimColor is the tag applied to a target-channel prompt when the channel's
-// group is currently hidden.
-const dimColor = "[#5f5f5f]"
+// group is currently hidden. It is seeded from the active theme profile.
+var dimColor string
 
 // resetColor restores tview's default foreground.
 const resetColor = "[-]"
+
+func init() {
+	ApplyDefaultThemeFromEnv()
+}
 
 // canonicalKey returns the case-folded form used as a channel-map key.
 // IRC names are case-insensitive on most networks; lowercasing is a

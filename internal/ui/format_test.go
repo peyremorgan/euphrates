@@ -23,7 +23,7 @@ func TestDigitForGroup(t *testing.T) {
 func TestFormatStatus_DefaultEverythingVisible(t *testing.T) {
 	s := newSt()
 	got := FormatStatus(s)
-	if !strings.HasPrefix(got, "[white::b]irc.example.org[-]  ") {
+	if !strings.HasPrefix(got, state.StatusPrimaryTag()+"irc.example.org[-]  ") {
 		t.Errorf("status missing server prefix: %q", got)
 	}
 	// All ten digits + S + Q each carry the bright marker.
@@ -40,7 +40,7 @@ func TestFormatStatus_DefaultEverythingVisible(t *testing.T) {
 func TestFormatStatus_UsesServerFallbackWhenUnset(t *testing.T) {
 	s := state.New(state.Config{MessageCap: 100, EventCap: 5})
 	got := FormatStatus(s)
-	if !strings.HasPrefix(got, "[white::b]server[-]  ") {
+	if !strings.HasPrefix(got, state.StatusPrimaryTag()+"server[-]  ") {
 		t.Errorf("status missing fallback server prefix: %q", got)
 	}
 }
