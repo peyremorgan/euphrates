@@ -35,12 +35,15 @@ type UI struct {
 	statusCountView *tview.TextView
 	statusRow       *tview.Flex
 	mainView        *tview.TextView
+	separatorView   *tview.TextView
 	eventsView      *tview.TextView
 	promptView      *tview.TextView
 	input           *tview.InputField
 	inputRow        *tview.Flex
 	root            *tview.Flex
 }
+
+const dottedSeparatorRune = "┄"
 
 // New builds a UI bound to the given state and Sender.
 func New(s *state.State, sender Sender) *UI {
@@ -50,6 +53,10 @@ func New(s *state.State, sender Sender) *UI {
 		sender: sender,
 	}
 	u.buildLayout()
+	u.app.SetBeforeDrawFunc(func(tcell.Screen) bool {
+		u.refreshSeparator()
+		return false
+	})
 	u.bindKeys()
 	u.RefreshAll()
 	return u
@@ -141,6 +148,9 @@ func (u *UI) buildLayout() {
 		SetScrollable(true).
 		SetWrap(true).
 		SetWordWrap(true)
+	u.separatorView = tview.NewTextView().
+		SetDynamicColors(true).
+		SetWrap(false)
 	u.eventsView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(true)
@@ -158,6 +168,7 @@ func (u *UI) buildLayout() {
 	u.root = tview.NewFlex().SetDirection(tview.FlexRow)
 	u.root.AddItem(u.statusRow, 1, 0, false)
 	u.root.AddItem(u.mainView, 0, 1, false)
+	u.root.AddItem(u.separatorView, 1, 0, false)
 	u.root.AddItem(u.eventsView, 5, 0, false)
 	u.root.AddItem(u.inputRow, 1, 0, true)
 }
@@ -167,6 +178,7 @@ func (u *UI) buildLayout() {
 func (u *UI) RefreshAll() {
 	u.refreshStatus()
 	u.refreshMain()
+	u.refreshSeparator()
 	u.refreshEvents()
 	u.refreshPrompt()
 }
@@ -196,6 +208,24 @@ func (u *UI) refreshEvents() {
 	for _, line := range u.state.Events() {
 		_, _ = fmt.Fprintln(u.eventsView, line)
 	}
+}
+
+func (u *UI) refreshSeparator() {
+	if u.separatorView == nil {
+		return
+	}
+	_, _, width, _ := u.separatorView.GetRect()
+	if width <= 0 {
+		_, _, width, _ = u.mainView.GetRect()
+	}
+	u.separatorView.SetText(dottedSeparator(width))
+}
+
+func dottedSeparator(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return strings.Repeat(dottedSeparatorRune, width)
 }
 
 func (u *UI) refreshPrompt() {

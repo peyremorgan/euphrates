@@ -77,6 +77,45 @@ func addLines(t *testing.T, u *UI, channel string, n int) {
 	u.refreshMain()
 }
 
+func TestBuildLayout_IncludesSeparatorBetweenMainAndEvents(t *testing.T) {
+	u, _ := newTestUI(t)
+
+	if got := u.root.GetItemCount(); got != 5 {
+		t.Fatalf("root item count=%d want 5", got)
+	}
+	if got := u.root.GetItem(2); got != u.separatorView {
+		t.Fatalf("item 2 is %T, want separator view", got)
+	}
+	if got := u.root.GetItem(3); got != u.eventsView {
+		t.Fatalf("item 3 is %T, want events view", got)
+	}
+}
+
+func TestRefreshSeparator_UsesSeparatorWidth(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.separatorView.SetRect(0, 0, 12, 1)
+
+	u.refreshSeparator()
+
+	want := strings.Repeat(dottedSeparatorRune, 12)
+	if got := u.separatorView.GetText(true); got != want {
+		t.Fatalf("separator text=%q want %q", got, want)
+	}
+}
+
+func TestRefreshSeparator_FallsBackToMainWidth(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.mainView.SetRect(0, 0, 9, 1)
+	u.separatorView.SetRect(0, 0, 0, 1)
+
+	u.refreshSeparator()
+
+	want := strings.Repeat(dottedSeparatorRune, 9)
+	if got := u.separatorView.GetText(true); got != want {
+		t.Fatalf("separator text=%q want %q", got, want)
+	}
+}
+
 // --- groupForRune ----------------------------------------------------------
 
 func TestGroupForRune(t *testing.T) {
