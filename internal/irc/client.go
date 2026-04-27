@@ -64,7 +64,7 @@ func New(cfg Config, h Handlers) (*Client, error) {
 		EnableCTCP: true,
 	}
 	if cfg.UseTLS {
-		conn.TLSConfig = &tls.Config{ServerName: hostOnly(cfg.Server)}
+		conn.TLSConfig = &tls.Config{ServerName: HostOnly(cfg.Server)}
 	}
 	if cfg.SASLUser != "" {
 		conn.UseSASL = true
@@ -172,13 +172,4 @@ func (c *Client) registerCallbacks() {
 			dispatchServerNumeric(c.handlers, m.Command, m.Params)
 		})
 	}
-}
-
-// hostOnly extracts the host portion of "host:port", or returns the input
-// unchanged if there's no port.
-func hostOnly(addr string) string {
-	if i := strings.LastIndexByte(addr, ':'); i > 0 && !strings.Contains(addr[i:], "]") {
-		return addr[:i]
-	}
-	return addr
 }

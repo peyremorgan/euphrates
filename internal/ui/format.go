@@ -5,6 +5,8 @@ package ui
 import (
 	"strings"
 
+	"github.com/rivo/tview"
+
 	"euphrates/internal/state"
 )
 
@@ -24,9 +26,17 @@ func digitForGroup(i int) string {
 // The output is a single line of tview-tagged text.
 func FormatStatus(s *state.State) string {
 	var b strings.Builder
-	b.WriteString("groups: ")
+	serverName := s.ServerName()
+	if serverName == "" {
+		serverName = "server"
+	}
+	b.WriteString("[white::b]")
+	b.WriteString(state.Escape(serverName))
+	b.WriteString(state.ResetColor())
+	b.WriteString("  ")
 	for i := 0; i < state.NumGroups; i++ {
-		writeMarker(&b, digitForGroup(i), s.IsVisible(state.GroupID(i)))
+		gid := state.GroupID(i)
+		writeMarker(&b, digitForGroup(i)+brailleForCount(s.NumericGroupCount(gid)), s.IsVisible(gid))
 		if i < state.NumGroups-1 {
 			b.WriteByte(' ')
 		}
@@ -77,10 +87,25 @@ func FormatPrompt(s *state.State) (text string, width int) {
 	if !visible {
 		color = state.DimColor()
 	}
-	text = color + state.Escape(bracketed) + state.ResetColor() + " "
-	// Visible width is bracketed runes plus the trailing space.
-	width = runeWidth(bracketed) + 1
+	escaped := state.Escape(bracketed)
+	text = color + escaped + state.ResetColor() + " "
+	// Visible width includes literal brackets plus trailing space.
+	width = tview.TaggedStringWidth(escaped) + 1
 	return text, width
+}
+
+// brailleForCount returns a compact 8-dot braille indicator for n channels.
+// Counts above 8 are saturated to a full cell.
+func brailleForCount(n int) string {
+	const full = "⣿"
+	if n > 8 {
+		return full
+	}
+	if n < 0 {
+		n = 0
+	}
+	glyphs := [9]string{"⠀", "⠁", "⠃", "⠇", "⠏", "⠟", "⠿", "⣟", full}
+	return glyphs[n]
 }
 
 // channelDisplay returns the string shown in the bracketed prefix:
@@ -94,8 +119,8 @@ func channelDisplay(c state.Channel) string {
 	}
 }
 
-// writeMarker writes a tview-tagged single-character group marker.
-// The marker is bold-bright when visible, dim when hidden.
+// writeMarker writes a tview-tagged group token.
+// The token is bold-bright when visible, dim when hidden.
 func writeMarker(b *strings.Builder, ch string, visible bool) {
 	if visible {
 		b.WriteString("[white::b]")
@@ -104,16 +129,4 @@ func writeMarker(b *strings.Builder, ch string, visible bool) {
 	}
 	b.WriteString(ch)
 	b.WriteString(state.ResetColor())
-}
-
-// runeWidth returns the count of runes in s. Used to size the prompt
-// TextView. Note that this approximates display width — full-width or
-// combining sequences could under- or over-allocate, but channel names are
-// virtually always ASCII so this is fine in practice.
-func runeWidth(s string) int {
-	n := 0
-	for range s {
-		n++
-	}
-	return n
 }

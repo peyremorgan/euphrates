@@ -20,6 +20,13 @@ func TestState_DefaultsApplied(t *testing.T) {
 	}
 }
 
+func TestState_ServerName(t *testing.T) {
+	s := New(Config{ServerName: "irc.example.org"})
+	if got := s.ServerName(); got != "irc.example.org" {
+		t.Errorf("serverName=%q", got)
+	}
+}
+
 func TestEnsureChannel_NormalAssignsLeastPopulatedGroup(t *testing.T) {
 	s := newTestState()
 	c1 := s.EnsureChannel("#a")
@@ -28,6 +35,15 @@ func TestEnsureChannel_NormalAssignsLeastPopulatedGroup(t *testing.T) {
 	// All start at count 0, so they should get groups 0, 1, 2 in order.
 	if c1.Group != GroupID(0) || c2.Group != GroupID(1) || c3.Group != GroupID(2) {
 		t.Errorf("groups: %d %d %d", c1.Group, c2.Group, c3.Group)
+	}
+	if got := s.NumericGroupCount(GroupID(0)); got != 1 {
+		t.Errorf("count(group0)=%d", got)
+	}
+	if got := s.NumericGroupCount(GroupID(1)); got != 1 {
+		t.Errorf("count(group1)=%d", got)
+	}
+	if got := s.NumericGroupCount(GroupServer); got != 0 {
+		t.Errorf("count(server)=%d", got)
 	}
 }
 

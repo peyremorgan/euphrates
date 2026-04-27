@@ -45,6 +45,7 @@ func run() error {
 	st := state.New(state.Config{
 		MessageCap: *msgCap,
 		EventCap:   *evtCap,
+		ServerName: irc.HostOnly(*server),
 	})
 
 	cli, err := irc.New(irc.Config{

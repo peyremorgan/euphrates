@@ -18,6 +18,8 @@ type Config struct {
 	// EventCap is the number of recent events kept for the events block.
 	// Zero means defaultEventCap.
 	EventCap int
+	// ServerName is the short server label shown in the UI status bar.
+	ServerName string
 }
 
 // State is the in-memory model of the client. All exported methods are safe
@@ -36,6 +38,8 @@ type State struct {
 	visible map[GroupID]bool // group -> visible (default true)
 
 	target string // canonical name of the current send target ("" if none)
+
+	serverName string
 }
 
 // New constructs a State with defaults applied for unset Config fields.
@@ -47,10 +51,11 @@ func New(cfg Config) *State {
 		cfg.EventCap = defaultEventCap
 	}
 	s := &State{
-		messages: NewRing[Message](cfg.MessageCap),
-		events:   NewRing[string](cfg.EventCap),
-		channels: make(map[string]*Channel),
-		visible:  make(map[GroupID]bool),
+		messages:   NewRing[Message](cfg.MessageCap),
+		events:     NewRing[string](cfg.EventCap),
+		channels:   make(map[string]*Channel),
+		visible:    make(map[GroupID]bool),
+		serverName: cfg.ServerName,
 	}
 	for i := 0; i < NumGroups; i++ {
 		s.visible[GroupID(i)] = true
@@ -255,6 +260,24 @@ func (s *State) IsChannelVisible(name string) bool {
 		return false
 	}
 	return s.visible[c.Group]
+}
+
+// NumericGroupCount returns the number of normal channels currently assigned
+// to numeric group g. Non-numeric groups always report 0.
+func (s *State) NumericGroupCount(g GroupID) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if !g.IsNumeric() {
+		return 0
+	}
+	return s.counts[g]
+}
+
+// ServerName returns the configured server label used in the status bar.
+func (s *State) ServerName() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.serverName
 }
 
 // VisibleGroups returns a copy of the current visibility map.

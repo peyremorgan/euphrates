@@ -111,6 +111,12 @@ func (u *UI) buildLayout() {
 	u.statusView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(false)
+	u.statusView.SetBackgroundColor(tview.Styles.ContrastBackgroundColor)
+	u.statusView.SetTextStyle(
+		tcell.StyleDefault.
+			Foreground(tview.Styles.PrimaryTextColor).
+			Background(tview.Styles.ContrastBackgroundColor),
+	)
 	u.mainView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetScrollable(true).

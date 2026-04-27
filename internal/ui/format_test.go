@@ -8,7 +8,7 @@ import (
 )
 
 func newSt() *state.State {
-	return state.New(state.Config{MessageCap: 100, EventCap: 5})
+	return state.New(state.Config{MessageCap: 100, EventCap: 5, ServerName: "irc.example.org"})
 }
 
 func TestDigitForGroup(t *testing.T) {
@@ -23,6 +23,9 @@ func TestDigitForGroup(t *testing.T) {
 func TestFormatStatus_DefaultEverythingVisible(t *testing.T) {
 	s := newSt()
 	got := FormatStatus(s)
+	if !strings.HasPrefix(got, "[white::b]irc.example.org[-]  ") {
+		t.Errorf("status missing server prefix: %q", got)
+	}
 	// All ten digits + S + Q each carry the bright marker.
 	if strings.Contains(got, state.DimColor()) {
 		t.Errorf("default status has dim marker: %q", got)
@@ -31,6 +34,26 @@ func TestFormatStatus_DefaultEverythingVisible(t *testing.T) {
 		if !strings.Contains(got, d) {
 			t.Errorf("missing %q marker: %q", d, got)
 		}
+	}
+}
+
+func TestFormatStatus_UsesServerFallbackWhenUnset(t *testing.T) {
+	s := state.New(state.Config{MessageCap: 100, EventCap: 5})
+	got := FormatStatus(s)
+	if !strings.HasPrefix(got, "[white::b]server[-]  ") {
+		t.Errorf("status missing fallback server prefix: %q", got)
+	}
+}
+
+func TestFormatStatus_ShowsBrailleGroupCounts(t *testing.T) {
+	s := newSt()
+	s.EnsureChannel("#chan")
+	got := FormatStatus(s)
+	if !strings.Contains(got, "1⠁") {
+		t.Errorf("group 1 count not rendered: %q", got)
+	}
+	if !strings.Contains(got, "2⠀") {
+		t.Errorf("group 2 zero-count marker not rendered: %q", got)
 	}
 }
 
@@ -87,8 +110,8 @@ func TestFormatPrompt_Visible(t *testing.T) {
 	if !strings.HasSuffix(text, " ") {
 		t.Errorf("prompt missing trailing space: %q", text)
 	}
-	if width != len("[#foo]")+1 {
-		t.Errorf("width=%d want %d", width, len("[#foo]")+1)
+	if width != 7 {
+		t.Errorf("width=%d want 7", width)
 	}
 }
 
@@ -117,5 +140,22 @@ func TestFormatPrompt_NoTarget(t *testing.T) {
 	text, width := FormatPrompt(s)
 	if text != "" || width != 0 {
 		t.Errorf("no-target prompt: %q %d", text, width)
+	}
+}
+
+func TestBrailleForCount_ProgressiveAndSaturated(t *testing.T) {
+	cases := []struct {
+		count int
+		want  string
+	}{
+		{0, "⠀"},
+		{4, "⠏"},
+		{8, "⣿"},
+		{99, "⣿"},
+	}
+	for _, c := range cases {
+		if got := brailleForCount(c.count); got != c.want {
+			t.Errorf("brailleForCount(%d)=%q want %q", c.count, got, c.want)
+		}
 	}
 }
