@@ -53,6 +53,7 @@ capacities).
 | Alt+1..0       | Solo numeric group 1-10                 |
 | Ctrl-N         | Next channel (target)                   |
 | Ctrl-P         | Previous channel (target)               |
+| Up / Down      | Scroll main message history (input empty) |
 | Ctrl-C         | Quit                                    |
 | `/me <text>`   | Send a CTCP ACTION to the target        |
 | `/quit [text]` | Disconnect                              |
