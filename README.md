@@ -7,7 +7,7 @@ A terminal IRC client with a unified, group-toggleable chat view.
 Instead of channel tabs, every joined channel is assigned to one of 10 numeric
 **groups** (plus two special groups: server messages and private queries).
 Channel messages are interleaved in a single scroll pane prefixed with
-`[#channel]`. **Alt+1**…**Alt+0** toggles the visibility of groups 1-10
+`[#channel]`. **Ctrl+1**…**Ctrl+0** toggles the visibility of groups 1-10
 (think `nmon` modules). Bare digits stay reserved for text input in the
 composer.
 
@@ -47,7 +47,7 @@ capacities).
 
 | Key            | Action                                  |
 | -------------- | --------------------------------------- |
-| Alt+1..0       | Toggle visibility of numeric group 1-10 |
+| Ctrl+1..0      | Toggle visibility of numeric group 1-10 |
 | Ctrl-N         | Next channel (target)                   |
 | Ctrl-P         | Previous channel (target)               |
 | Ctrl-C         | Quit                                    |
