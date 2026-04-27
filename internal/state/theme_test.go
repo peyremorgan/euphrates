@@ -59,3 +59,30 @@ func TestApplyThemeForCapability_UpdatesPublicColors(t *testing.T) {
 		t.Fatalf("incomplete chrome theme: %#v", chrome)
 	}
 }
+
+func TestApplyThemeForCapability_TrueColorProfile(t *testing.T) {
+	themeMu.Lock()
+	oldTheme := activeTheme
+	oldPalette := append([]string(nil), channelPalette...)
+	oldDim := dimColor
+	themeMu.Unlock()
+	t.Cleanup(func() {
+		themeMu.Lock()
+		activeTheme = oldTheme
+		channelPalette = append([]string(nil), oldPalette...)
+		dimColor = oldDim
+		themeMu.Unlock()
+	})
+
+	ApplyThemeForCapability(StyleCapability{ColorLevel: ColorLevelTrueColor, SupportsDim: true})
+
+	if StatusPrimaryTag() != "[#d8f7ff::b]" {
+		t.Fatalf("StatusPrimaryTag()=%q want %q", StatusPrimaryTag(), "[#d8f7ff::b]")
+	}
+	if DimColor() != "[#5a5f6f]" {
+		t.Fatalf("DimColor()=%q want %q", DimColor(), "[#5a5f6f]")
+	}
+	if got := ChannelColor("#foo"); got == "" || got[0] != '[' {
+		t.Fatalf("ChannelColor()=%q invalid tag", got)
+	}
+}
