@@ -160,7 +160,7 @@ func (c *Client) registerCallbacks() {
 		dispatchMode(c.handlers, m.Source, param(m, 0), m.Params[1:])
 	})
 	c.conn.AddCallback("ERROR", func(m ircmsg.Message) {
-		c.handlers.emitEvent("⨯ server error: " + strings.Join(m.Params, " "))
+		c.handlers.emitEventNow("⨯ server error: " + strings.Join(m.Params, " "))
 	})
 
 	// Server numerics 001..599. Skip a couple that ircevent already drives

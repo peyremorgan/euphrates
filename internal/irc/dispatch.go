@@ -11,6 +11,7 @@ package irc
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ergochat/irc-go/ircmsg"
 
@@ -59,6 +60,14 @@ func (h Handlers) emitEvent(line string) {
 	}
 }
 
+func (h Handlers) emitEventNow(line string) {
+	h.emitEvent(formatStampedLine(time.Now(), line))
+}
+
+func formatStampedLine(ts time.Time, line string) string {
+	return ts.Format("15:04:05") + " " + line
+}
+
 func (h Handlers) emitJoin(channel string) {
 	if h.OnJoin != nil {
 		h.OnJoin(channel)
@@ -89,6 +98,7 @@ func dispatchPrivmsg(h Handlers, src, target, text string, kind state.MessageKin
 		Nick:    nick,
 		Text:    text,
 		Kind:    kind,
+		Time:    time.Now(),
 	})
 }
 
@@ -101,10 +111,10 @@ func dispatchJoin(h Handlers, src, channel string) {
 	nick := nickFromSource(src)
 	if strings.EqualFold(nick, h.self()) {
 		h.emitJoin(channel)
-		h.emitEvent(fmt.Sprintf("→ joined %s", channel))
+		h.emitEventNow(fmt.Sprintf("→ joined %s", channel))
 		return
 	}
-	h.emitEvent(fmt.Sprintf("→ %s joined %s", nick, channel))
+	h.emitEventNow(fmt.Sprintf("→ %s joined %s", nick, channel))
 }
 
 // dispatchPart handles a PART. When we leave, drop the channel from state;
@@ -120,10 +130,10 @@ func dispatchPart(h Handlers, src, channel, reason string) {
 	}
 	if strings.EqualFold(nick, h.self()) {
 		h.emitPart(channel)
-		h.emitEvent(fmt.Sprintf("← left %s%s", channel, suffix))
+		h.emitEventNow(fmt.Sprintf("← left %s%s", channel, suffix))
 		return
 	}
-	h.emitEvent(fmt.Sprintf("← %s left %s%s", nick, channel, suffix))
+	h.emitEventNow(fmt.Sprintf("← %s left %s%s", nick, channel, suffix))
 }
 
 // dispatchQuit handles a QUIT. We can't know which channels were affected
@@ -137,7 +147,7 @@ func dispatchQuit(h Handlers, src, reason string) {
 	if reason != "" {
 		suffix = " (" + reason + ")"
 	}
-	h.emitEvent(fmt.Sprintf("← %s quit%s", nick, suffix))
+	h.emitEventNow(fmt.Sprintf("← %s quit%s", nick, suffix))
 }
 
 // dispatchNick handles a NICK change. Self changes are rare (servers
@@ -148,10 +158,10 @@ func dispatchNick(h Handlers, src, newNick string) {
 		return
 	}
 	if strings.EqualFold(old, h.self()) || strings.EqualFold(newNick, h.self()) {
-		h.emitEvent(fmt.Sprintf("∗ you are now %s", newNick))
+		h.emitEventNow(fmt.Sprintf("∗ you are now %s", newNick))
 		return
 	}
-	h.emitEvent(fmt.Sprintf("∗ %s is now %s", old, newNick))
+	h.emitEventNow(fmt.Sprintf("∗ %s is now %s", old, newNick))
 }
 
 // dispatchTopic handles a TOPIC command sent live during a session.
@@ -160,7 +170,7 @@ func dispatchTopic(h Handlers, src, channel, topic string) {
 		return
 	}
 	nick := nickFromSource(src)
-	h.emitEvent(fmt.Sprintf("# %s topic by %s: %s", channel, nick, topic))
+	h.emitEventNow(fmt.Sprintf("# %s topic by %s: %s", channel, nick, topic))
 }
 
 // dispatchKick handles a KICK. Self-kicks remove the channel.
@@ -175,10 +185,10 @@ func dispatchKick(h Handlers, src, channel, target, reason string) {
 	}
 	if strings.EqualFold(target, h.self()) {
 		h.emitPart(channel)
-		h.emitEvent(fmt.Sprintf("⨯ kicked from %s by %s%s", channel, by, suffix))
+		h.emitEventNow(fmt.Sprintf("⨯ kicked from %s by %s%s", channel, by, suffix))
 		return
 	}
-	h.emitEvent(fmt.Sprintf("⨯ %s kicked %s from %s%s", by, target, channel, suffix))
+	h.emitEventNow(fmt.Sprintf("⨯ %s kicked %s from %s%s", by, target, channel, suffix))
 }
 
 // dispatchMode renders a MODE change as a single event line.
@@ -190,7 +200,7 @@ func dispatchMode(h Handlers, src, target string, params []string) {
 	if by == "" {
 		by = "server"
 	}
-	h.emitEvent(fmt.Sprintf("± %s mode %s by %s", target, strings.Join(params, " "), by))
+	h.emitEventNow(fmt.Sprintf("± %s mode %s by %s", target, strings.Join(params, " "), by))
 }
 
 // dispatchServerNumeric routes a server numeric reply (001, 372, 376, 433, …)
@@ -206,6 +216,7 @@ func dispatchServerNumeric(h Handlers, command string, params []string) {
 		Nick:    command,
 		Text:    text,
 		Kind:    state.KindServer,
+		Time:    time.Now(),
 	})
 }
 
@@ -219,6 +230,7 @@ func dispatchNotice(h Handlers, src, target, text string) {
 			Nick:    nickOrServer(src),
 			Text:    text,
 			Kind:    state.KindNotice,
+			Time:    time.Now(),
 		})
 		return
 	}

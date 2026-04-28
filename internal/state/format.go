@@ -3,6 +3,7 @@ package state
 import (
 	"regexp"
 	"strings"
+	"time"
 )
 
 // MessageKind classifies how a Message is rendered.
@@ -30,6 +31,7 @@ type Message struct {
 	Nick    string
 	Text    string
 	Kind    MessageKind
+	Time    time.Time
 }
 
 // tviewEscapePattern mirrors tview's Escape regex but with a permissive
@@ -75,6 +77,7 @@ func channelTag(name string, kind ChanKind) string {
 // formatMessage renders a Message into a single tview-safe line (no
 // trailing newline) for the main scroll pane.
 func formatMessage(m Message, kind ChanKind) string {
+	ts := m.Time.Format("15:04:05")
 	tag := channelTag(m.Channel, kind)
 	body := Escape(m.Text)
 	nick := Escape(m.Nick)
@@ -83,12 +86,12 @@ func formatMessage(m Message, kind ChanKind) string {
 	}
 	switch m.Kind {
 	case KindAction:
-		return tag + " * " + nick + " " + body
+		return ts + " " + tag + " * " + nick + " " + body
 	case KindNotice:
-		return tag + " -" + nick + "- " + body
+		return ts + " " + tag + " -" + nick + "- " + body
 	case KindServer:
-		return tag + " " + body
+		return ts + " " + tag + " " + body
 	default: // KindPrivmsg
-		return tag + " <" + nick + "> " + body
+		return ts + " " + tag + " <" + nick + "> " + body
 	}
 }

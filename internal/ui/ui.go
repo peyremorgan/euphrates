@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -464,6 +465,7 @@ func (u *UI) sendTo(target, text string, kind state.MessageKind) {
 		Nick:    u.sender.Nick(),
 		Text:    text,
 		Kind:    kind,
+		Time:    time.Now(),
 	}
 	line, visible := u.state.AppendMessage(echo)
 	// ForceTargetVisible above ensures `visible` is true, but we keep the

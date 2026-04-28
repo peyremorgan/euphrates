@@ -2,8 +2,10 @@ package irc
 
 import (
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"euphrates/internal/state"
 )
@@ -17,6 +19,8 @@ type recorder struct {
 	parts    []string
 }
 
+var timestampPrefixPattern = regexp.MustCompile(`^\d\d:\d\d:\d\d\s`)
+
 func newRecorder(self string) (*recorder, Handlers) {
 	r := &recorder{self: self}
 	return r, Handlers{
@@ -25,6 +29,24 @@ func newRecorder(self string) (*recorder, Handlers) {
 		OnEvent:   func(s string) { r.events = append(r.events, s) },
 		OnJoin:    func(c string) { r.joins = append(r.joins, c) },
 		OnPart:    func(c string) { r.parts = append(r.parts, c) },
+	}
+}
+
+func assertHasTimestampPrefix(t *testing.T, line string) {
+	t.Helper()
+	if !timestampPrefixPattern.MatchString(line) {
+		t.Fatalf("missing hh:mm:ss prefix: %q", line)
+	}
+}
+
+func assertRecentMessageTime(t *testing.T, got time.Time) {
+	t.Helper()
+	if got.IsZero() {
+		t.Fatal("message time is zero")
+	}
+	now := time.Now()
+	if got.Before(now.Add(-2*time.Second)) || got.After(now.Add(2*time.Second)) {
+		t.Fatalf("message time %v out of expected range around %v", got, now)
 	}
 }
 
@@ -54,6 +76,8 @@ func TestDispatchPrivmsg_ChannelMessage(t *testing.T) {
 	}
 	got := r.messages[0]
 	want := state.Message{Channel: "#foo", Nick: "alice", Text: "hello", Kind: state.KindPrivmsg}
+	assertRecentMessageTime(t, got.Time)
+	got.Time = time.Time{}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got=%+v want=%+v", got, want)
 	}
@@ -65,6 +89,7 @@ func TestDispatchPrivmsg_DirectMessage(t *testing.T) {
 	if len(r.messages) != 1 || r.messages[0].Channel != "alice" {
 		t.Errorf("expected query keyed by sender; got %+v", r.messages)
 	}
+	assertRecentMessageTime(t, r.messages[0].Time)
 }
 
 func TestDispatchPrivmsg_DirectMessageCaseInsensitive(t *testing.T) {
@@ -73,6 +98,7 @@ func TestDispatchPrivmsg_DirectMessageCaseInsensitive(t *testing.T) {
 	if len(r.messages) != 1 || r.messages[0].Channel != "alice" {
 		t.Errorf("case-insensitive self match failed: %+v", r.messages)
 	}
+	assertRecentMessageTime(t, r.messages[0].Time)
 }
 
 func TestDispatchPrivmsg_Action(t *testing.T) {
@@ -81,6 +107,7 @@ func TestDispatchPrivmsg_Action(t *testing.T) {
 	if len(r.messages) != 1 || r.messages[0].Kind != state.KindAction {
 		t.Errorf("action not routed: %+v", r.messages)
 	}
+	assertRecentMessageTime(t, r.messages[0].Time)
 }
 
 func TestDispatchPrivmsg_DropsServerSource(t *testing.T) {
@@ -99,6 +126,7 @@ func TestDispatchNotice_ChannelRoutesAsMessage(t *testing.T) {
 	if len(r.messages) != 1 || r.messages[0].Channel != "#foo" || r.messages[0].Kind != state.KindNotice {
 		t.Errorf("channel notice mis-routed: %+v", r.messages)
 	}
+	assertRecentMessageTime(t, r.messages[0].Time)
 }
 
 func TestDispatchNotice_ToSelfRoutesToServer(t *testing.T) {
@@ -107,6 +135,7 @@ func TestDispatchNotice_ToSelfRoutesToServer(t *testing.T) {
 	if len(r.messages) != 1 || r.messages[0].Channel != state.ServerChannelName {
 		t.Errorf("self-notice should land in server log: %+v", r.messages)
 	}
+	assertRecentMessageTime(t, r.messages[0].Time)
 }
 
 func TestDispatchNotice_PreRegistrationStarTarget(t *testing.T) {
@@ -115,6 +144,7 @@ func TestDispatchNotice_PreRegistrationStarTarget(t *testing.T) {
 	if len(r.messages) != 1 || r.messages[0].Channel != state.ServerChannelName {
 		t.Errorf("pre-reg notice to '*' should land in server log: %+v", r.messages)
 	}
+	assertRecentMessageTime(t, r.messages[0].Time)
 }
 
 // --- dispatchJoin / dispatchPart -----------------------------------------
@@ -128,6 +158,7 @@ func TestDispatchJoin_Self(t *testing.T) {
 	if len(r.events) == 0 || !strings.Contains(r.events[0], "joined #foo") {
 		t.Errorf("missing join event: %+v", r.events)
 	}
+	assertHasTimestampPrefix(t, r.events[0])
 }
 
 func TestDispatchJoin_Other(t *testing.T) {
@@ -139,6 +170,7 @@ func TestDispatchJoin_Other(t *testing.T) {
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "alice") {
 		t.Errorf("expected alice event: %+v", r.events)
 	}
+	assertHasTimestampPrefix(t, r.events[0])
 }
 
 func TestDispatchPart_SelfAndReason(t *testing.T) {
@@ -150,6 +182,7 @@ func TestDispatchPart_SelfAndReason(t *testing.T) {
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "(bye)") {
 		t.Errorf("reason missing: %+v", r.events)
 	}
+	assertHasTimestampPrefix(t, r.events[0])
 }
 
 func TestDispatchPart_Other(t *testing.T) {
@@ -161,6 +194,7 @@ func TestDispatchPart_Other(t *testing.T) {
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "alice") {
 		t.Errorf("expected event: %+v", r.events)
 	}
+	assertHasTimestampPrefix(t, r.events[0])
 }
 
 // --- dispatchQuit / dispatchNick / dispatchTopic / dispatchKick ----------
@@ -174,6 +208,7 @@ func TestDispatchQuit(t *testing.T) {
 	if !strings.Contains(r.events[0], "(ping timeout)") {
 		t.Errorf("reason missing: %+v", r.events)
 	}
+	assertHasTimestampPrefix(t, r.events[0])
 }
 
 func TestDispatchNick_SelfRename(t *testing.T) {
@@ -182,6 +217,7 @@ func TestDispatchNick_SelfRename(t *testing.T) {
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "you are now newme") {
 		t.Errorf("self-nick event: %+v", r.events)
 	}
+	assertHasTimestampPrefix(t, r.events[0])
 }
 
 func TestDispatchNick_OtherRename(t *testing.T) {
@@ -190,6 +226,7 @@ func TestDispatchNick_OtherRename(t *testing.T) {
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "alice is now alicia") {
 		t.Errorf("nick event: %+v", r.events)
 	}
+	assertHasTimestampPrefix(t, r.events[0])
 }
 
 func TestDispatchTopic(t *testing.T) {
@@ -198,6 +235,7 @@ func TestDispatchTopic(t *testing.T) {
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "be excellent") {
 		t.Errorf("topic event: %+v", r.events)
 	}
+	assertHasTimestampPrefix(t, r.events[0])
 }
 
 func TestDispatchKick_Self(t *testing.T) {
@@ -209,6 +247,7 @@ func TestDispatchKick_Self(t *testing.T) {
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "kicked from #foo") {
 		t.Errorf("kick event: %+v", r.events)
 	}
+	assertHasTimestampPrefix(t, r.events[0])
 }
 
 func TestDispatchKick_Other(t *testing.T) {
@@ -220,6 +259,7 @@ func TestDispatchKick_Other(t *testing.T) {
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "kicked alice") {
 		t.Errorf("kick event: %+v", r.events)
 	}
+	assertHasTimestampPrefix(t, r.events[0])
 }
 
 // --- dispatchMode ---------------------------------------------------------
@@ -230,6 +270,7 @@ func TestDispatchMode(t *testing.T) {
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "+o alice") {
 		t.Errorf("mode event: %+v", r.events)
 	}
+	assertHasTimestampPrefix(t, r.events[0])
 }
 
 // --- dispatchServerNumeric -----------------------------------------------
@@ -250,6 +291,7 @@ func TestDispatchServerNumeric_DropsLeadingNick(t *testing.T) {
 	if got.Text != "- welcome to libera -" {
 		t.Errorf("text=%q", got.Text)
 	}
+	assertRecentMessageTime(t, got.Time)
 }
 
 func TestDispatchServerNumeric_EmptyParamsIsNoop(t *testing.T) {

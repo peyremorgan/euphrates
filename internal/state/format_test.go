@@ -3,7 +3,12 @@ package state
 import (
 	"strings"
 	"testing"
+	"time"
 )
+
+func fixedMessageTime() time.Time {
+	return time.Date(2026, time.April, 28, 8, 4, 39, 0, time.UTC)
+}
 
 func TestEscape_NeutralisesTags(t *testing.T) {
 	in := "look [red]not red[-]"
@@ -54,9 +59,12 @@ func TestChannelTag_ServerPrefix(t *testing.T) {
 }
 
 func TestFormatMessage_Privmsg(t *testing.T) {
-	m := Message{Channel: "#go", Nick: "ada", Text: "hi", Kind: KindPrivmsg}
+	m := Message{Channel: "#go", Nick: "ada", Text: "hi", Kind: KindPrivmsg, Time: fixedMessageTime()}
 	got := formatMessage(m, ChanNormal)
 	wantNick := UserColor("ada") + "ada" + resetColor
+	if !strings.HasPrefix(got, "08:04:39 ") {
+		t.Errorf("missing timestamp prefix: %q", got)
+	}
 	if !strings.Contains(got, "<"+wantNick+">") {
 		t.Errorf("missing <nick>: %q", got)
 	}
@@ -66,7 +74,7 @@ func TestFormatMessage_Privmsg(t *testing.T) {
 }
 
 func TestFormatMessage_Action(t *testing.T) {
-	m := Message{Channel: "#go", Nick: "ada", Text: "waves", Kind: KindAction}
+	m := Message{Channel: "#go", Nick: "ada", Text: "waves", Kind: KindAction, Time: fixedMessageTime()}
 	got := formatMessage(m, ChanNormal)
 	wantNick := UserColor("ada") + "ada" + resetColor
 	if !strings.Contains(got, " * "+wantNick+" waves") {
@@ -75,7 +83,7 @@ func TestFormatMessage_Action(t *testing.T) {
 }
 
 func TestFormatMessage_Notice(t *testing.T) {
-	m := Message{Channel: "#go", Nick: "srv", Text: "hello", Kind: KindNotice}
+	m := Message{Channel: "#go", Nick: "srv", Text: "hello", Kind: KindNotice, Time: fixedMessageTime()}
 	got := formatMessage(m, ChanNormal)
 	wantNick := UserColor("srv") + "srv" + resetColor
 	if !strings.Contains(got, " -"+wantNick+"- hello") {
@@ -84,7 +92,7 @@ func TestFormatMessage_Notice(t *testing.T) {
 }
 
 func TestFormatMessage_Server(t *testing.T) {
-	m := Message{Channel: ServerChannelName, Text: "MOTD line", Kind: KindServer}
+	m := Message{Channel: ServerChannelName, Text: "MOTD line", Kind: KindServer, Time: fixedMessageTime()}
 	got := formatMessage(m, ChanServer)
 	if !strings.Contains(got, "[*server[]") {
 		t.Errorf("server tag missing: %q", got)
@@ -95,7 +103,7 @@ func TestFormatMessage_Server(t *testing.T) {
 }
 
 func TestFormatMessage_EscapesUserContent(t *testing.T) {
-	m := Message{Channel: "#x", Nick: "bob", Text: "look [red]hi[-]", Kind: KindPrivmsg}
+	m := Message{Channel: "#x", Nick: "bob", Text: "look [red]hi[-]", Kind: KindPrivmsg, Time: fixedMessageTime()}
 	got := formatMessage(m, ChanNormal)
 	if !strings.Contains(got, "[red[]") {
 		t.Errorf("user text not escaped: %q", got)
@@ -106,7 +114,7 @@ func TestFormatMessage_EscapesUserContent(t *testing.T) {
 }
 
 func TestFormatMessage_EscapesNickBeforeColor(t *testing.T) {
-	m := Message{Channel: "#x", Nick: "[@alice]", Text: "hi", Kind: KindPrivmsg}
+	m := Message{Channel: "#x", Nick: "[@alice]", Text: "hi", Kind: KindPrivmsg, Time: fixedMessageTime()}
 	got := formatMessage(m, ChanNormal)
 	wantNick := UserColor("[@alice]") + "[@alice[]" + resetColor
 	if !strings.Contains(got, "<"+wantNick+">") {
