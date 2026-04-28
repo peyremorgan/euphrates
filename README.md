@@ -34,13 +34,34 @@ capacities).
 
 ## Layout
 
+### Status line
 ```
-groups: 1 2 3 4 5 6 7 8 9 0  S Q   ▶ [#foo]   ← status line
-[#foo] <alice> hello                          ← unified scroll pane
+irc.libera.chat 1⣧ 2⡄ 3⡆ 4⣧ 5⡀ 6⡀ 7⡄ 8⡀ 9 0  S Q              22 channels
+```
+
+- **Server label:** the leftmost text is the configured server name (falls back to "server" if unset).
+- **Numeric groups (1–0):** each digit toggles one of the 10 numeric groups (Alt+1…Alt+0). The small braille glyph after the digit shows how many channels are assigned to that group (0 → ⠀, 1 → ⡀, … 8+ → ⣿);
+- **S / Q markers:** `S` indicates the server messages group and `Q` indicates private queries; these markers show whether the corresponding special group is visible.
+- **Visibility styling:** markers are bright when a group is visible and dimmed when hidden.
+- **Channel count (right):** total number of normal channels across numeric groups (excludes the server pseudo-channel and queries).
+
+
+
+### Messages
+```
+[#foo] <alice> hello
 [#bar] <bob>   hi
-…
+```
+
+### Events
+```
+…………………………………………………………………………
 → alice joined #foo                           ← 5-line events pane
 ± #bar mode +o alice
+```
+
+### Composer
+```
 [#foo]                                        ← prompt + input
 ```
 
