@@ -49,21 +49,41 @@ irc.libera.chat 1⣧ 2⡄ 3⡆ 4⣧ 5⡀ 6⡀ 7⡄ 8⡀ 9 0  S Q              22
 
 ### Messages
 ```
-[#foo] <alice> hello
-[#bar] <bob>   hi
+11:29:56 [#foo] <alice> hello
+11:30:24 [#bar] <bob> hi
 ```
+
+The main pane is a unified scrollback view that displays all messages from visible channels and queries. Each line contains:
+
+- **Timestamp** (HH:MM:SS): local time when the message was sent.
+- **Channel prefix** ([#name] or [@nick]): the source channel or private query.
+- **Nick** (<nick>): the sender's username.
+- **Message**: the message text, wrapping as needed.
+
+Messages from all visible groups are interleaved chronologically, making it easy to follow conversations across multiple channels simultaneously. Scrolling up and down (when the composer is empty) navigates through the history.
 
 ### Events
 ```
 …………………………………………………………………………
-→ alice joined #foo                           ← 5-line events pane
+→ alice joined #foopane
 ± #bar mode +o alice
 ```
 
+Events are separated from the main message pane for readability. The events pane is a fixed 5-line section that displays IRC activity such as:
+
+- **Joins and parts:** users entering or leaving channels (→ nick joined / ← nick left).
+- **Mode changes:** channel operator status, voice, and other modes (± #channel mode +o nick).
+- **Topic changes:** when a channel topic is updated.
+- **Nick changes:** when a user changes their nickname.
+
+Events use visual symbols (→, ←, ±) to quickly distinguish event types without cluttering the message history. This keeps the scrollback clean and lets you focus on conversations while still monitoring activity.
+
 ### Composer
 ```
-[#foo]                                        ← prompt + input
+[#foo] |
 ```
+
+The input line is prefixed with the current target channel in brackets. The prefix dims when the target's group is hidden. Submitting a message in a hidden group automatically re-shows that group. Use **Ctrl-N** / **Ctrl-P** to cycle through joined channels and change the target.
 
 ## Keys
 
