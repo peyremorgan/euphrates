@@ -108,10 +108,10 @@ make lint       # vet + gofmt + (optional) golangci-lint
 
 ## Theme
 
-Euphrates now uses a subtle **Neon noir** theme by default. Theme contributions are welcome!
+Euphrates uses a subtle **Neon noir** theme by default. Theme contributions are welcome!
 
-- Status, separators, and prompt chrome use cool cyan/teal accents.
-- Channel and nick colors stay deterministic and stable per name.
+- Cyan accents for status, separators, and prompt chrome.
+- Deterministic coloring of channels and nicks.
 - The renderer automatically falls back by terminal capability:
 	- truecolor terminals use 24-bit theme values,
 	- 256-color terminals use a matched 256 palette,
