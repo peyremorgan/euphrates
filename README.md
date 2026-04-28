@@ -10,13 +10,15 @@ Channel messages are interleaved in a single scroll pane prefixed with
 `[#channel]`. **Alt+1**…**Alt+0** toggles the visibility of groups 1-10
 (think `nmon` modules). **F1**…**F10** solos a numeric group (shows
 only that one numeric group). Solo does not change visibility of the
-special server/query groups. Bare digits stay reserved for text input in
-the composer.
+special server/query groups.
 
 The composer is prefixed with the current target channel in brackets; the
 prefix dims when the target's group is hidden, and submitting a message
 force-shows the target group again. Cycle through joined channels with
 **Ctrl-N** / **Ctrl-P**.
+
+![Composer demo](doc/img/compose.gif)
+
 
 ## Theme
 
