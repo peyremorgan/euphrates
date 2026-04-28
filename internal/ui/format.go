@@ -53,9 +53,9 @@ func FormatStatus(s *state.State) string {
 // of the status row.
 func FormatStatusCount(s *state.State) string {
 	count := s.NormalChannelCount()
-	label := "Channels"
+	label := "channels"
 	if count == 1 {
-		label = "Channel"
+		label = "channel"
 	}
 	return state.Escape(strconv.Itoa(count) + " " + label)
 }
