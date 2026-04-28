@@ -434,7 +434,7 @@ func (u *UI) handleCommand(line string) {
 	case "/quit":
 		reason := rest
 		if reason == "" {
-			reason = "euphrates"
+			reason = "Bye!"
 		}
 		u.sender.Quit(reason)
 		u.Stop()
