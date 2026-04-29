@@ -23,6 +23,32 @@ force-shows the target group again. Cycle through joined channels with
 make
 ```
 
+## Cross-build
+
+Build raw release binaries for these targets from a Linux host:
+
+- windows/amd64
+- darwin/arm64
+- linux/amd64
+- linux/arm64
+
+```bash
+make release
+```
+
+Artifacts are written to `dist/` as:
+
+- `dist/euphrates-windows-amd64.exe`
+- `dist/euphrates-darwin-arm64`
+- `dist/euphrates-linux-amd64`
+- `dist/euphrates-linux-arm64`
+
+Clean release artifacts:
+
+```bash
+make clean-dist
+```
+
 ## Run
 
 ```

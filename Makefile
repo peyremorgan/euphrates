@@ -1,13 +1,26 @@
-.PHONY: all build test test-race lint vet fmt tidy clean run
+.PHONY: all build test test-race lint vet fmt tidy clean run release clean-dist
 
 GO ?= go
 PKG := ./...
 BIN := euphrates
+DIST := dist
+TARGETS := windows/amd64 darwin/arm64 linux/amd64 linux/arm64
 
 all: lint test build
 
 build:
 	$(GO) build -o $(BIN) .
+
+release:
+	@mkdir -p $(DIST)
+	@set -e; \
+	for target in $(TARGETS); do \
+		os=$${target%/*}; arch=$${target#*/}; \
+		ext=""; if [ "$$os" = "windows" ]; then ext=".exe"; fi; \
+		out="$(DIST)/$(BIN)-$$os-$$arch$$ext"; \
+		echo "building $$target -> $$out"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -o "$$out" .; \
+	done
 
 run: build
 	./$(BIN)
@@ -42,3 +55,6 @@ tidy:
 clean:
 	rm -f $(BIN)
 	$(GO) clean -testcache
+
+clean-dist:
+	rm -rf $(DIST)
