@@ -22,6 +22,8 @@ type Sender interface {
 	SendAction(target, text string) error
 	// Quit closes the connection with the given reason.
 	Quit(reason string)
+	// Join asks the server to join channel.
+	Join(channel string) error
 }
 
 // UI owns the tview widgets and routes events between state and Sender.
@@ -31,6 +33,8 @@ type UI struct {
 	sender Sender
 
 	manualScroll bool
+
+	joinCompletion joinCompletionState
 
 	statusView      *tview.TextView
 	statusCountView *tview.TextView
@@ -42,6 +46,11 @@ type UI struct {
 	input           *tview.InputField
 	inputRow        *tview.Flex
 	root            *tview.Flex
+}
+
+type joinCompletionState struct {
+	expandedInput string
+	matches       []string
 }
 
 const dottedSeparatorRune = "┄"
@@ -313,6 +322,10 @@ func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		u.sender.Quit("euphrates closing")
 		u.Stop()
 		return nil
+	case tcell.KeyTab:
+		if u.tryJoinCompletion() {
+			return nil
+		}
 	}
 	return ev
 }
@@ -438,8 +451,68 @@ func (u *UI) handleCommand(line string) {
 		}
 		u.sender.Quit(reason)
 		u.Stop()
+	case "/join":
+		if rest == "" {
+			u.addEvent("(usage: /join <channel>)")
+			return
+		}
+		if err := u.sender.Join(rest); err != nil {
+			u.addEvent("join failed: " + err.Error())
+		}
 	default:
 		u.addEvent("(unknown command: " + cmd + ")")
+	}
+}
+
+func (u *UI) tryJoinCompletion() bool {
+	text := u.input.GetText()
+	if !strings.HasPrefix(strings.ToLower(text), "/join ") {
+		u.joinCompletion = joinCompletionState{}
+		return false
+	}
+	if strings.EqualFold(text, "/join ") {
+		u.joinCompletion = joinCompletionState{}
+		u.input.SetText("/join #")
+		return true
+	}
+	if text == u.joinCompletion.expandedInput && len(u.joinCompletion.matches) > 1 {
+		u.showCompletionList(u.joinCompletion.matches)
+		return true
+	}
+	u.joinCompletion = joinCompletionState{}
+
+	partial := text[len("/join "):]
+	matches := u.state.MatchJoinableChannels(partial)
+	if len(matches) == 0 {
+		return true
+	}
+	if len(matches) == 1 {
+		u.input.SetText("/join " + matches[0])
+		return true
+	}
+
+	lcp := longestCommonPrefix(matches)
+	if lcp != "" && !strings.EqualFold(lcp, partial) {
+		expanded := "/join " + lcp
+		u.input.SetText(expanded)
+		u.joinCompletion = joinCompletionState{
+			expandedInput: expanded,
+			matches:       append([]string(nil), matches...),
+		}
+		return true
+	}
+
+	u.showCompletionList(matches)
+	return true
+}
+
+func (u *UI) showCompletionList(matches []string) {
+	if len(matches) == 0 {
+		return
+	}
+	_, _, w, _ := u.eventsView.GetRect()
+	for _, line := range formatCompletionLines(matches, w) {
+		u.addEvent(line)
 	}
 }
 

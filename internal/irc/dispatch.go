@@ -39,6 +39,9 @@ type Handlers struct {
 
 	// OnPart is fired when *we* leave a channel.
 	OnPart func(channel string)
+
+	// OnChannelList is fired when a LIST response has fully completed.
+	OnChannelList func(names []string)
 }
 
 func (h Handlers) self() string {
@@ -77,6 +80,12 @@ func (h Handlers) emitJoin(channel string) {
 func (h Handlers) emitPart(channel string) {
 	if h.OnPart != nil {
 		h.OnPart(channel)
+	}
+}
+
+func (h Handlers) emitChannelList(names []string) {
+	if h.OnChannelList != nil {
+		h.OnChannelList(names)
 	}
 }
 

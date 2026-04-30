@@ -17,6 +17,7 @@ type recorder struct {
 	events   []string
 	joins    []string
 	parts    []string
+	lists    [][]string
 }
 
 var timestampPrefixPattern = regexp.MustCompile(`^\d\d:\d\d:\d\d\s`)
@@ -29,6 +30,11 @@ func newRecorder(self string) (*recorder, Handlers) {
 		OnEvent:   func(s string) { r.events = append(r.events, s) },
 		OnJoin:    func(c string) { r.joins = append(r.joins, c) },
 		OnPart:    func(c string) { r.parts = append(r.parts, c) },
+		OnChannelList: func(names []string) {
+			cp := make([]string, len(names))
+			copy(cp, names)
+			r.lists = append(r.lists, cp)
+		},
 	}
 }
 
@@ -316,6 +322,18 @@ func TestNilHandlersDoNotPanic(t *testing.T) {
 	dispatchMode(h, "op", "#foo", []string{"+o"})
 	dispatchServerNumeric(h, "001", []string{"me", "welcome"})
 	dispatchNotice(h, "x!u@h", "#foo", "y")
+	h.emitChannelList([]string{"#a"})
+}
+
+func TestEmitChannelList(t *testing.T) {
+	r, h := newRecorder("me")
+	h.emitChannelList([]string{"#a", "#b"})
+	if len(r.lists) != 1 {
+		t.Fatalf("lists=%v", r.lists)
+	}
+	if !reflect.DeepEqual(r.lists[0], []string{"#a", "#b"}) {
+		t.Fatalf("list=%v", r.lists[0])
+	}
 }
 
 // --- hostOnly -------------------------------------------------------------

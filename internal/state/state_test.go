@@ -1,6 +1,7 @@
 package state
 
 import (
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -383,6 +384,43 @@ func TestEvents_RingedAndSnapshotted(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("events[%d]=%q want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestSetChannelListCache_DeduplicatesCaseInsensitive(t *testing.T) {
+	s := newTestState()
+	s.SetChannelListCache([]string{"#Go", "#go", "#rust"})
+
+	got := s.MatchJoinableChannels("#")
+	if len(got) != 2 {
+		t.Fatalf("match len=%d want 2 (%v)", len(got), got)
+	}
+}
+
+func TestMatchJoinableChannels_UsesJoinedAsExclusionFilter(t *testing.T) {
+	s := newTestState()
+	s.SetChannelListCache([]string{"#alpha", "#beta", "#gamma"})
+	s.JoinChannel("#beta")
+
+	got := s.MatchJoinableChannels("#")
+	if len(got) != 2 {
+		t.Fatalf("match len=%d want 2 (%v)", len(got), got)
+	}
+	for _, name := range got {
+		if strings.EqualFold(name, "#beta") {
+			t.Fatalf("joined channel leaked into completions: %v", got)
+		}
+	}
+}
+
+func TestMatchJoinableChannels_PrefixAndSort(t *testing.T) {
+	s := newTestState()
+	s.SetChannelListCache([]string{"#Zoo", "#alpha", "#apple", "#beta"})
+
+	got := s.MatchJoinableChannels("#a")
+	want := []string{"#alpha", "#apple"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("matches=%v want %v", got, want)
 	}
 }
 
