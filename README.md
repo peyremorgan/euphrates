@@ -55,6 +55,13 @@ make clean-dist
 ./euphrates -server irc.libera.chat:6697 -tls -nick yournick -channels '#foo,#bar'
 ```
 
+Inside the devcontainer, an Ergo IRC sidecar is available at `irc:6667`.
+Example:
+
+```
+./euphrates -server irc:6667 -nick yournick -channels '#euphrates'
+```
+
 Run `./euphrates -h` for the full flag list (SASL, server password, ring
 capacities).
 
@@ -129,8 +136,19 @@ The input line is prefixed with the current target channel in brackets. The pref
 ```
 make test       # plain
 make test-race  # with the race detector
+make test-e2e   # in-process network e2e (no external services)
+make test-integration  # live IRC integration (defaults to IRC_TEST_ADDR=irc:6667)
 make lint       # vet + gofmt + (optional) golangci-lint
 ```
+
+### Devcontainer sidecar
+
+The devcontainer now uses Docker Compose with two services:
+
+- `app`: Go development container attached by VS Code.
+- `irc`: Ergo IRC test server sidecar.
+
+`make test-integration` is intended to run inside this environment.
 
 ## Theme
 
