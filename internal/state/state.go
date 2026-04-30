@@ -1,6 +1,7 @@
 package state
 
 import (
+	"sort"
 	"strings"
 )
 
@@ -33,6 +34,7 @@ type State struct {
 	channels  map[string]*Channel // canonicalKey -> Channel
 	order     []string            // canonical names in insertion order
 	nextOrder int
+	listCache map[string]string   // canonicalKey -> original name from LIST
 
 	counts  [NumGroups]int   // per-numeric-group channel count
 	visible map[GroupID]bool // group -> visible (default true)
@@ -54,6 +56,7 @@ func New(cfg Config) *State {
 		messages:   NewRing[Message](cfg.MessageCap),
 		events:     NewRing[string](cfg.EventCap),
 		channels:   make(map[string]*Channel),
+		listCache:  make(map[string]string),
 		visible:    make(map[GroupID]bool),
 		serverName: cfg.ServerName,
 	}
@@ -161,6 +164,43 @@ func (s *State) Channels() []Channel {
 	for _, k := range s.order {
 		out = append(out, *s.channels[k])
 	}
+	return out
+}
+
+// SetChannelListCache replaces the local cache of LIST-discovered channels.
+// Names are de-duplicated case-insensitively.
+func (s *State) SetChannelListCache(names []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.listCache = make(map[string]string, len(names))
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		s.listCache[canonicalKey(name)] = name
+	}
+}
+
+// MatchJoinableChannels returns cached LIST channels matching prefix,
+// excluding channels we already joined. Matching is case-insensitive.
+func (s *State) MatchJoinableChannels(prefix string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	prefixKey := canonicalKey(prefix)
+	out := make([]string, 0, len(s.listCache))
+	for key, name := range s.listCache {
+		if !strings.HasPrefix(key, prefixKey) {
+			continue
+		}
+		if c, ok := s.channels[key]; ok && c.Kind == ChanNormal {
+			continue
+		}
+		out = append(out, name)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return canonicalKey(out[i]) < canonicalKey(out[j])
+	})
 	return out
 }
 
