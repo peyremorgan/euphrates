@@ -33,6 +33,7 @@ type Client struct {
 	conn     *ircevent.Connection
 	handlers Handlers
 	cfg      Config
+	listBuf  []string
 }
 
 // New constructs a Client from the given config and handlers. The Handlers'
@@ -112,6 +113,11 @@ func (c *Client) SendAction(target, text string) error {
 	return c.conn.Action(target, text)
 }
 
+// Join asks the server to join channel.
+func (c *Client) Join(channel string) error {
+	return c.conn.Join(channel)
+}
+
 // Quit closes the connection with the given reason.
 func (c *Client) Quit(reason string) {
 	c.conn.QuitMessage = reason
@@ -127,6 +133,8 @@ func (c *Client) registerCallbacks() {
 			}
 			_ = c.conn.Join(ch)
 		}
+		c.listBuf = nil
+		_ = c.conn.Send("LIST")
 	})
 
 	c.conn.AddCallback("PRIVMSG", func(m ircmsg.Message) {
@@ -162,11 +170,25 @@ func (c *Client) registerCallbacks() {
 	c.conn.AddCallback("ERROR", func(m ircmsg.Message) {
 		c.handlers.emitEventNow("⨯ server error: " + strings.Join(m.Params, " "))
 	})
+	c.conn.AddCallback("322", func(m ircmsg.Message) {
+		channel := param(m, 1)
+		if channel == "" {
+			return
+		}
+		c.listBuf = append(c.listBuf, channel)
+	})
+	c.conn.AddCallback("323", func(_ ircmsg.Message) {
+		c.handlers.emitChannelList(c.listBuf)
+		c.listBuf = nil
+	})
 
 	// Server numerics 001..599. Skip a couple that ircevent already drives
 	// or that are pure protocol noise (NAMES list 353/366 are noisy; we
 	// route them to the server log too for completeness).
 	for code := 1; code <= 599; code++ {
+		if code == 322 || code == 323 {
+			continue
+		}
 		cmd := fmt.Sprintf("%03d", code)
 		c.conn.AddCallback(cmd, func(m ircmsg.Message) {
 			dispatchServerNumeric(c.handlers, m.Command, m.Params)

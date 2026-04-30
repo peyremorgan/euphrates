@@ -72,6 +72,7 @@ func run() error {
 		OnEvent:   u.OnEvent,
 		OnJoin:    u.OnJoin,
 		OnPart:    u.OnPart,
+		OnChannelList: st.SetChannelListCache,
 	})
 
 	go func() {
