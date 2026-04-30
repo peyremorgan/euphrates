@@ -1,0 +1,32 @@
+network:
+  name: EuphratesTest
+
+server:
+  name: ergo.test
+  listeners:
+    ":6667":
+
+# Keep account auth enabled, but avoid forcing account registration/login in tests.
+accounts:
+  authentication-enabled: true
+  registration:
+    enabled: true
+  require-sasl:
+    enabled: false
+
+# Reduce persistence complexity for local dev/test sidecar.
+datastore:
+  autoupgrade: true
+
+# Keep history light and ephemeral for test workflows.
+history:
+  enabled: true
+  channel-length: 128
+  client-length: 64
+  restrictions:
+    expire-time: 12h
+  persistent:
+    enabled: false
+
+# Needed for env overrides in future test scenarios.
+allow-environment-overrides: true

@@ -1,0 +1,21 @@
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/go:1.26-bookworm
+    command: /bin/sh -c "while sleep 1000; do :; done"
+    volumes:
+      - ..:/workspace:cached
+    working_dir: /workspace
+    environment:
+      IRC_TEST_ADDR: irc:6667
+    depends_on:
+      - irc
+
+  irc:
+    image: ghcr.io/ergochat/ergo:stable
+    init: true
+    volumes:
+      - ergo-data:/ircd
+      - ./ergo/ircd.yaml:/ircd/ircd.yaml:ro
+
+volumes:
+  ergo-data:

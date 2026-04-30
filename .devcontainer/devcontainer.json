@@ -1,7 +1,17 @@
 {
   "name": "euphrates",
-  "image": "mcr.microsoft.com/devcontainers/go:1.26-bookworm",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "runServices": [
+    "app",
+    "irc"
+  ],
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
   "postCreateCommand": "go mod download",
+  "remoteEnv": {
+    "IRC_TEST_ADDR": "irc:6667"
+  },
   "customizations": {
     "vscode": {
       "extensions": [
