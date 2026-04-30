@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -39,5 +40,42 @@ func TestJoinCompletionFlow_E2E(t *testing.T) {
 	u.onInputDone(tcell.KeyEnter)
 	if len(fs.joins) != 1 || fs.joins[0] != "#golang" {
 		t.Fatalf("joins=%v", fs.joins)
+	}
+}
+
+func TestJoinCompletion_DoubleTabAfterLCPExpansion_E2E(t *testing.T) {
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20})
+	fs := &fakeSender{nick: "me"}
+	u := New(s, fs)
+	u.eventsView.SetRect(0, 0, 120, 5)
+	u.state.SetChannelListCache([]string{
+		"#archive",
+		"#archivebot-alerts",
+		"#archivebot-bs",
+		"#archiveteam-internal",
+		"#archiveteam-matrix",
+	})
+
+	u.input.SetText("/join #arch")
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)); got != nil {
+		t.Fatalf("first tab not consumed")
+	}
+	if got := u.input.GetText(); got != "/join #archive" {
+		t.Fatalf("input=%q want /join #archive", got)
+	}
+
+	before := len(u.state.Events())
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)); got != nil {
+		t.Fatalf("second tab not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected completion suggestions in events, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	for _, want := range []string{"#archive", "#archivebot-alerts", "#archivebot-bs", "#archiveteam-internal", "#archiveteam-matrix"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in events: %v", want, after[before:])
+		}
 	}
 }

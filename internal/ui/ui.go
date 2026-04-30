@@ -34,6 +34,8 @@ type UI struct {
 
 	manualScroll bool
 
+	joinCompletion joinCompletionState
+
 	statusView      *tview.TextView
 	statusCountView *tview.TextView
 	statusRow       *tview.Flex
@@ -44,6 +46,11 @@ type UI struct {
 	input           *tview.InputField
 	inputRow        *tview.Flex
 	root            *tview.Flex
+}
+
+type joinCompletionState struct {
+	expandedInput string
+	matches       []string
 }
 
 const dottedSeparatorRune = "┄"
@@ -460,12 +467,19 @@ func (u *UI) handleCommand(line string) {
 func (u *UI) tryJoinCompletion() bool {
 	text := u.input.GetText()
 	if !strings.HasPrefix(strings.ToLower(text), "/join ") {
+		u.joinCompletion = joinCompletionState{}
 		return false
 	}
 	if strings.EqualFold(text, "/join ") {
+		u.joinCompletion = joinCompletionState{}
 		u.input.SetText("/join #")
 		return true
 	}
+	if text == u.joinCompletion.expandedInput && len(u.joinCompletion.matches) > 1 {
+		u.showCompletionList(u.joinCompletion.matches)
+		return true
+	}
+	u.joinCompletion = joinCompletionState{}
 
 	partial := text[len("/join "):]
 	matches := u.state.MatchJoinableChannels(partial)
@@ -479,7 +493,12 @@ func (u *UI) tryJoinCompletion() bool {
 
 	lcp := longestCommonPrefix(matches)
 	if lcp != "" && !strings.EqualFold(lcp, partial) {
-		u.input.SetText("/join " + lcp)
+		expanded := "/join " + lcp
+		u.input.SetText(expanded)
+		u.joinCompletion = joinCompletionState{
+			expandedInput: expanded,
+			matches:       append([]string(nil), matches...),
+		}
 		return true
 	}
 

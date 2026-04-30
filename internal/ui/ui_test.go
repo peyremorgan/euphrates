@@ -452,6 +452,70 @@ func TestTryJoinCompletion_DoubleTabShowsCompletions(t *testing.T) {
 	}
 }
 
+func TestTryJoinCompletion_DoubleTabAfterLCPExpansionShowsSameSuggestions(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.eventsView.SetRect(0, 0, 80, 5)
+	u.state.SetChannelListCache([]string{
+		"#archive",
+		"#archivebot-alerts",
+		"#archivebot-bs",
+		"#archiveteam-internal",
+	})
+
+	u.input.SetText("/join #arch")
+	if !u.tryJoinCompletion() {
+		t.Fatal("first completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/join #archive" {
+		t.Fatalf("input=%q", got)
+	}
+
+	before := len(u.state.Events())
+	if !u.tryJoinCompletion() {
+		t.Fatal("second completion not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected suggestions after second tab, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	for _, want := range []string{"#archive", "#archivebot-alerts", "#archivebot-bs", "#archiveteam-internal"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in suggestions: %v", want, after[before:])
+		}
+	}
+}
+
+func TestTryJoinCompletion_DoubleTabUsesSavedCandidatesIfCacheChanges(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.eventsView.SetRect(0, 0, 80, 5)
+	u.state.SetChannelListCache([]string{"#archive", "#archivebot-alerts", "#archivebot-bs"})
+
+	u.input.SetText("/join #arch")
+	if !u.tryJoinCompletion() {
+		t.Fatal("first completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/join #archive" {
+		t.Fatalf("input=%q", got)
+	}
+
+	// Simulate a cache refresh racing with user input between first and second Tab.
+	u.state.SetChannelListCache([]string{"#archive"})
+
+	before := len(u.state.Events())
+	if !u.tryJoinCompletion() {
+		t.Fatal("second completion not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected suggestions after second tab, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	if !strings.Contains(joined, "#archivebot-alerts") || !strings.Contains(joined, "#archivebot-bs") {
+		t.Fatalf("expected saved candidates in suggestions, got %v", after[before:])
+	}
+}
+
 func TestTryJoinCompletion_ExcludesAlreadyJoinedChannels(t *testing.T) {
 	u, _ := newTestUI(t)
 	u.state.SetChannelListCache([]string{"#go", "#golang", "#games"})
