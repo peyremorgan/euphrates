@@ -139,7 +139,7 @@ func longestCommonPrefix(strs []string) string {
 		}
 		i := 0
 		for i < n {
-			if strings.ToLower(prefix[i:i+1]) != strings.ToLower(s[i:i+1]) {
+			if !strings.EqualFold(prefix[i:i+1], s[i:i+1]) {
 				break
 			}
 			i++
