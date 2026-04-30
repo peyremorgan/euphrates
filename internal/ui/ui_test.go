@@ -18,9 +18,11 @@ type fakeSender struct {
 	nick     string
 	privmsgs []sentMsg
 	actions  []sentMsg
+	joins    []string
 	quitWith string
 	quitN    int
 	sendErr  error
+	joinErr  error
 }
 
 type sentMsg struct{ Target, Text string }
@@ -52,6 +54,16 @@ func (f *fakeSender) Quit(reason string) {
 	defer f.mu.Unlock()
 	f.quitN++
 	f.quitWith = reason
+}
+
+func (f *fakeSender) Join(channel string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.joinErr != nil {
+		return f.joinErr
+	}
+	f.joins = append(f.joins, channel)
+	return nil
 }
 
 // newTestUI builds a UI without starting the tview event loop.
@@ -348,6 +360,130 @@ func TestHandleSubmit_UnknownCommand(t *testing.T) {
 	ev := u.state.Events()
 	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "unknown command") {
 		t.Errorf("expected unknown-cmd event, got %v", ev)
+	}
+}
+
+func TestHandleSubmit_Join(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.handleSubmit("/join #go")
+	if len(fs.joins) != 1 || fs.joins[0] != "#go" {
+		t.Fatalf("joins=%v", fs.joins)
+	}
+}
+
+func TestHandleSubmit_JoinWithoutArg(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.handleSubmit("/join")
+	if len(fs.joins) != 0 {
+		t.Fatalf("unexpected join calls: %v", fs.joins)
+	}
+	ev := u.state.Events()
+	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "usage: /join") {
+		t.Fatalf("expected usage event, got %v", ev)
+	}
+}
+
+func TestHandleSubmit_JoinError(t *testing.T) {
+	u, fs := newTestUI(t)
+	fs.joinErr = errors.New("denied")
+	u.handleSubmit("/join #go")
+	ev := u.state.Events()
+	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "join failed") {
+		t.Fatalf("expected join-failed event, got %v", ev)
+	}
+}
+
+func TestTryJoinCompletion_OnlyCommandAddsHash(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.input.SetText("/join ")
+	if !u.tryJoinCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/join #" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestTryJoinCompletion_SingleMatch(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.SetChannelListCache([]string{"#golang", "#rust"})
+	u.input.SetText("/join #go")
+	if !u.tryJoinCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/join #golang" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestTryJoinCompletion_CompletesLargestCommonPrefix(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.SetChannelListCache([]string{"#go-help", "#go-nuts", "#games"})
+	u.input.SetText("/join #g")
+	if !u.tryJoinCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/join #g" {
+		t.Fatalf("expected unchanged partial because lcp == partial, got %q", got)
+	}
+
+	u.input.SetText("/join #go")
+	if !u.tryJoinCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/join #go-" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestTryJoinCompletion_DoubleTabShowsCompletions(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.eventsView.SetRect(0, 0, 80, 5)
+	u.state.SetChannelListCache([]string{"#go-help", "#go-nuts", "#go-dev"})
+	u.input.SetText("/join #go-")
+	before := len(u.state.Events())
+
+	if !u.tryJoinCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected completions in events, before=%d after=%d", before, len(after))
+	}
+}
+
+func TestTryJoinCompletion_ExcludesAlreadyJoinedChannels(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.SetChannelListCache([]string{"#go", "#golang", "#games"})
+	u.state.JoinChannel("#go")
+	u.input.SetText("/join #go")
+	if !u.tryJoinCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/join #golang" {
+		t.Fatalf("expected joined channel exclusion, got %q", got)
+	}
+}
+
+func TestHandleKey_TabCompletesJoin(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.SetChannelListCache([]string{"#golang"})
+	u.input.SetText("/join #go")
+	ev := tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("tab not consumed")
+	}
+	if got := u.input.GetText(); got != "/join #golang" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestHandleKey_TabPassesThroughWhenNotJoin(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.input.SetText("hello")
+	ev := tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)
+	if got := u.handleKey(ev); got != ev {
+		t.Fatal("tab unexpectedly consumed")
 	}
 }
 

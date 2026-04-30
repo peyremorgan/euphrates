@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -122,4 +123,110 @@ func writeMarker(b *strings.Builder, ch string, visible bool) {
 	}
 	b.WriteString(ch)
 	b.WriteString(state.ResetColor())
+}
+
+// longestCommonPrefix returns the case-insensitive common prefix of strs.
+// The returned prefix keeps the original casing from the first string.
+func longestCommonPrefix(strs []string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	prefix := strs[0]
+	for _, s := range strs[1:] {
+		n := len(prefix)
+		if len(s) < n {
+			n = len(s)
+		}
+		i := 0
+		for i < n {
+			if strings.ToLower(prefix[i:i+1]) != strings.ToLower(s[i:i+1]) {
+				break
+			}
+			i++
+		}
+		prefix = prefix[:i]
+		if prefix == "" {
+			return ""
+		}
+	}
+	return prefix
+}
+
+// formatCompletionLines packs names into at most two lines for event output.
+// If not all names fit, the final line includes an overflow summary.
+func formatCompletionLines(names []string, lineWidth int) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	if lineWidth <= 0 {
+		lineWidth = 80
+	}
+
+	const maxLines = 2
+	lines := make([]string, 0, maxLines)
+	line := ""
+	idx := 0
+
+	for idx < len(names) {
+		name := names[idx]
+		candidate := name
+		if line != "" {
+			candidate = line + " " + name
+		}
+		if len(candidate) <= lineWidth {
+			line = candidate
+			idx++
+			continue
+		}
+		if len(lines) == maxLines-1 {
+			break
+		}
+		if line == "" {
+			line = name
+			idx++
+		}
+		lines = append(lines, line)
+		line = ""
+	}
+
+	if line != "" {
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		lines = append(lines, names[0])
+		idx = 1
+	}
+
+	remaining := len(names) - idx
+	if remaining > 0 {
+		suffix := fmt.Sprintf(" ... +%d more", remaining)
+		last := lines[len(lines)-1]
+		lines[len(lines)-1] = appendWithOverflow(last, suffix, lineWidth)
+	}
+
+	if len(lines) > maxLines {
+		return lines[:maxLines]
+	}
+	return lines
+}
+
+func appendWithOverflow(line, suffix string, width int) string {
+	if len(line)+len(suffix) <= width {
+		return line + suffix
+	}
+	if len(suffix) >= width {
+		return suffix[:width]
+	}
+	trim := width - len(suffix)
+	if trim <= 0 {
+		return suffix
+	}
+	if len(line) > trim {
+		line = line[:trim]
+	}
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return strings.TrimSpace(suffix)
+	}
+	return line + suffix
 }

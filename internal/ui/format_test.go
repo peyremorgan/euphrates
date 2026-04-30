@@ -162,3 +162,52 @@ func TestBrailleForCount_ProgressiveAndSaturated(t *testing.T) {
 		}
 	}
 }
+
+func TestLongestCommonPrefix(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []string
+		want string
+	}{
+		{name: "empty", in: nil, want: ""},
+		{name: "single", in: []string{"#go"}, want: "#go"},
+		{name: "case insensitive", in: []string{"#GoLang", "#gol"}, want: "#GoL"},
+		{name: "none", in: []string{"#go", "#rust"}, want: "#"},
+		{name: "partial", in: []string{"#go-help", "#go-nuts"}, want: "#go-"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := longestCommonPrefix(tc.in); got != tc.want {
+				t.Fatalf("lcp=%q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatCompletionLines(t *testing.T) {
+	t.Run("single line", func(t *testing.T) {
+		got := formatCompletionLines([]string{"#a", "#b", "#c"}, 20)
+		if len(got) != 1 {
+			t.Fatalf("lines=%v", got)
+		}
+		if got[0] != "#a #b #c" {
+			t.Fatalf("line=%q", got[0])
+		}
+	})
+
+	t.Run("two lines with overflow summary", func(t *testing.T) {
+		got := formatCompletionLines(
+			[]string{"#alpha", "#beta", "#gamma", "#delta", "#epsilon", "#zeta"},
+			18,
+		)
+		if len(got) > 2 {
+			t.Fatalf("too many lines: %v", got)
+		}
+		if len(got) == 0 {
+			t.Fatal("no output lines")
+		}
+		if !strings.Contains(got[len(got)-1], "+") {
+			t.Fatalf("expected overflow summary, got %v", got)
+		}
+	})
+}
