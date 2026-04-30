@@ -67,11 +67,11 @@ func run() error {
 	// Re-bind handlers now that the UI exists. Self stays pinned to the
 	// live connection nick by irc.New.
 	cli.SetHandlers(irc.Handlers{
-		Self:      cli.Nick,
-		OnMessage: u.OnMessage,
-		OnEvent:   u.OnEvent,
-		OnJoin:    u.OnJoin,
-		OnPart:    u.OnPart,
+		Self:          cli.Nick,
+		OnMessage:     u.OnMessage,
+		OnEvent:       u.OnEvent,
+		OnJoin:        u.OnJoin,
+		OnPart:        u.OnPart,
 		OnChannelList: st.SetChannelListCache,
 	})
 

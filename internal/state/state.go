@@ -34,7 +34,7 @@ type State struct {
 	channels  map[string]*Channel // canonicalKey -> Channel
 	order     []string            // canonical names in insertion order
 	nextOrder int
-	listCache map[string]string   // canonicalKey -> original name from LIST
+	listCache map[string]string // canonicalKey -> original name from LIST
 
 	counts  [NumGroups]int   // per-numeric-group channel count
 	visible map[GroupID]bool // group -> visible (default true)
