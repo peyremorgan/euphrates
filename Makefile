@@ -1,4 +1,4 @@
-.PHONY: all build test test-race lint vet fmt tidy clean run release clean-dist
+.PHONY: all build test test-race test-e2e test-integration lint vet fmt tidy clean run release clean-dist
 
 GO ?= go
 PKG := ./...
@@ -30,6 +30,14 @@ test:
 
 test-race:
 	$(GO) test -race -count=1 $(PKG)
+
+# End-to-end tests use an in-process IRC server to exercise network paths.
+test-e2e:
+	$(GO) test -count=1 ./internal/irc -run TestClientE2E_InProcessServer
+
+# Integration tests require a live IRC server (default: devcontainer sidecar).
+test-integration:
+	IRC_TEST_ADDR=$${IRC_TEST_ADDR:-irc:6667} $(GO) test -tags=integration -count=1 ./internal/irc -run TestClientIntegration_LiveServer
 
 vet:
 	$(GO) vet $(PKG)
