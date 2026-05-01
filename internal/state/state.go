@@ -500,7 +500,6 @@ func (s *State) applyGroupingLocked(trigger GroupingTrigger, changedChannel stri
 	assignment, handled, err := s.grouping.Apply(input)
 	if err != nil {
 		s.events.Push("grouping strategy error: " + err.Error())
-		return
 	}
 	if !handled {
 		return

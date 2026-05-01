@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -23,5 +25,36 @@ func TestSplitChannels(t *testing.T) {
 				t.Fatalf("splitChannels(%q)=%v want %v", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestResolveGroupingDir_Override(t *testing.T) {
+	path, explicit, err := resolveGroupingDir("/tmp/custom")
+	if err != nil {
+		t.Fatalf("resolveGroupingDir: %v", err)
+	}
+	if !explicit {
+		t.Fatal("explicit=false want true")
+	}
+	if path != "/tmp/custom" {
+		t.Fatalf("path=%q want /tmp/custom", path)
+	}
+}
+
+func TestResolveGroupingDir_Default(t *testing.T) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatalf("UserConfigDir: %v", err)
+	}
+	path, explicit, err := resolveGroupingDir("")
+	if err != nil {
+		t.Fatalf("resolveGroupingDir: %v", err)
+	}
+	if explicit {
+		t.Fatal("explicit=true want false")
+	}
+	want := filepath.Join(configDir, "euphrates", "grouping.d")
+	if path != want {
+		t.Fatalf("path=%q want %q", path, want)
 	}
 }

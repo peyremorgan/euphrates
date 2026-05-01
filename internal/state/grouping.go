@@ -43,17 +43,24 @@ type GroupingChain []GroupingStrategy
 
 // Apply runs each strategy until one handles the input.
 func (c GroupingChain) Apply(input GroupingInput) (Assignment, bool, error) {
+	var firstErr error
 	for i, strategy := range c {
 		if strategy == nil {
 			continue
 		}
 		assignment, handled, err := strategy.Apply(input)
 		if err != nil {
-			return nil, false, fmt.Errorf("strategy %d: %w", i, err)
+			if firstErr == nil {
+				firstErr = fmt.Errorf("strategy %d: %w", i, err)
+			}
+			continue
 		}
 		if handled {
-			return assignment, true, nil
+			return assignment, true, firstErr
 		}
+	}
+	if firstErr != nil {
+		return nil, false, firstErr
 	}
 	return nil, false, nil
 }

@@ -3,12 +3,15 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"euphrates/internal/grouping"
 	"euphrates/internal/irc"
 	"euphrates/internal/state"
 	"euphrates/internal/ui"
@@ -34,6 +37,7 @@ func run() error {
 		channels = flag.String("channels", "", "comma-separated list of channels to autojoin")
 		msgCap   = flag.Int("scrollback", 10000, "main pane scrollback ring capacity")
 		evtCap   = flag.Int("events", 200, "events pane ring capacity")
+		groupDir = flag.String("grouping-dir", "", "directory containing ordered *.lua grouping strategies")
 	)
 	flag.Parse()
 
@@ -42,11 +46,44 @@ func run() error {
 		return fmt.Errorf("--server and --nick are required")
 	}
 
+	strategy := state.DefaultGroupingStrategy()
+	groupingEvent := ""
+	dir, explicit, err := resolveGroupingDir(*groupDir)
+	if err != nil {
+		return err
+	}
+	if info, err := os.Stat(dir); err == nil {
+		if !info.IsDir() {
+			if explicit {
+				return fmt.Errorf("grouping path is not a directory: %s", dir)
+			}
+			groupingEvent = fmt.Sprintf("grouping disabled: %s is not a directory", dir)
+		} else {
+			loaded, loadErr := grouping.LoadDir(dir)
+			if loadErr != nil {
+				groupingEvent = fmt.Sprintf("grouping load failed from %s: %v", dir, loadErr)
+			} else {
+				strategy = loaded
+				groupingEvent = fmt.Sprintf("grouping strategies loaded from %s", dir)
+			}
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		if explicit {
+			return fmt.Errorf("grouping directory not found: %s", dir)
+		}
+	} else {
+		return err
+	}
+
 	st := state.New(state.Config{
 		MessageCap: *msgCap,
 		EventCap:   *evtCap,
 		ServerName: irc.HostOnly(*server),
+		Grouping:   strategy,
 	})
+	if groupingEvent != "" {
+		st.AddEvent(groupingEvent)
+	}
 
 	cli, err := irc.New(irc.Config{
 		Server:   *server,
@@ -106,4 +143,15 @@ func splitChannels(s string) []string {
 		}
 	}
 	return out
+}
+
+func resolveGroupingDir(override string) (path string, explicit bool, err error) {
+	if override != "" {
+		return override, true, nil
+	}
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", false, err
+	}
+	return filepath.Join(configDir, "euphrates", "grouping.d"), false, nil
 }

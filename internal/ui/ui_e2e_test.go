@@ -9,6 +9,12 @@ import (
 	"euphrates/internal/state"
 )
 
+type uiGroupingStrategyFunc func(state.GroupingInput) (state.Assignment, bool, error)
+
+func (f uiGroupingStrategyFunc) Apply(input state.GroupingInput) (state.Assignment, bool, error) {
+	return f(input)
+}
+
 func TestJoinCompletionFlow_E2E(t *testing.T) {
 	s := state.New(state.Config{MessageCap: 100, EventCap: 20})
 	fs := &fakeSender{nick: "me"}
@@ -77,5 +83,45 @@ func TestJoinCompletion_DoubleTabAfterLCPExpansion_E2E(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in events: %v", want, after[before:])
 		}
+	}
+}
+
+func TestJoinAndPartHooks_ApplyRegroupingStrategy_E2E(t *testing.T) {
+	strategy := uiGroupingStrategyFunc(func(input state.GroupingInput) (state.Assignment, bool, error) {
+		out := make(state.Assignment, len(input.Channels))
+		group := state.GroupID(0)
+		if input.Trigger == state.GroupingTriggerPart {
+			group = 7
+		}
+		for _, ch := range input.Channels {
+			out[ch.Name] = group
+		}
+		return out, true, nil
+	})
+
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20, Grouping: strategy})
+	fs := &fakeSender{nick: "me"}
+	u := New(s, fs)
+
+	s.JoinChannel("#a")
+	s.JoinChannel("#b")
+	s.AppendMessage(state.Message{Channel: "#a", Nick: "alice", Text: "a1", Kind: state.KindPrivmsg})
+	s.AppendMessage(state.Message{Channel: "#b", Nick: "bob", Text: "b1", Kind: state.KindPrivmsg})
+	u.refreshMain()
+
+	s.PartChannel("#a")
+	u.refreshAfterStructuralChange()
+	b, ok := s.Channel("#b")
+	if !ok {
+		t.Fatal("#b channel missing after part")
+	}
+	if b.Group != 7 {
+		t.Fatalf("#b group=%d want 7", b.Group)
+	}
+	s.SetVisible(state.GroupID(7), false)
+	u.refreshMain()
+
+	if lines := s.RenderVisible(); len(lines) != 0 {
+		t.Fatalf("expected no visible lines after hiding regrouped channel, got %d", len(lines))
 	}
 }
