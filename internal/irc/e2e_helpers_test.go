@@ -184,6 +184,7 @@ type miniIRCServer struct {
 }
 
 type miniClient struct {
+	mu         sync.Mutex
 	srv        *miniIRCServer
 	conn       net.Conn
 	nick       string
@@ -273,7 +274,9 @@ func (c *miniClient) handleLine(line string) {
 		}
 	case "NICK":
 		if len(params) >= 1 {
+			c.mu.Lock()
 			c.nick = params[0]
+			c.mu.Unlock()
 			c.hasNick = true
 			c.maybeRegister()
 		}
@@ -291,8 +294,11 @@ func (c *miniClient) handleLine(line string) {
 				if ch == "" {
 					continue
 				}
+				c.mu.Lock()
 				c.channels[strings.ToLower(ch)] = struct{}{}
-				c.broadcastChannel(ch, ":%s!u@localhost JOIN %s", c.nick, ch)
+				nick := c.nick
+				c.mu.Unlock()
+				c.broadcastChannel(ch, ":%s!u@localhost JOIN %s", nick, ch)
 			}
 		}
 	case "PRIVMSG":
@@ -306,8 +312,8 @@ func (c *miniClient) handleLine(line string) {
 			return
 		}
 		c.srv.withClients(func(other *miniClient) {
-			if strings.EqualFold(other.nick, target) {
-				other.writef(":%s!u@localhost PRIVMSG %s :%s\r\n", c.nick, target, text)
+			if strings.EqualFold(other.nickSnapshot(), target) {
+				other.writef(":%s!u@localhost PRIVMSG %s :%s\r\n", c.nickSnapshot(), target, text)
 			}
 		})
 	case "QUIT":
@@ -315,8 +321,8 @@ func (c *miniClient) handleLine(line string) {
 		if len(params) > 0 {
 			reason = params[len(params)-1]
 		}
-		for ch := range c.channels {
-			c.broadcastChannel(ch, ":%s!u@localhost QUIT :%s", c.nick, reason)
+		for _, ch := range c.channelListSnapshot() {
+			c.broadcastChannel(ch, ":%s!u@localhost QUIT :%s", c.nickSnapshot(), reason)
 		}
 		_ = c.conn.Close()
 	}
@@ -335,10 +341,33 @@ func (c *miniClient) broadcastChannel(channel, format string, args ...any) {
 	low := strings.ToLower(channel)
 	payload := fmt.Sprintf(format, args...)
 	c.srv.withClients(func(other *miniClient) {
-		if _, ok := other.channels[low]; ok {
+		if other.hasChannel(low) {
 			other.writef("%s\r\n", payload)
 		}
 	})
+}
+
+func (c *miniClient) hasChannel(channel string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, ok := c.channels[channel]
+	return ok
+}
+
+func (c *miniClient) channelListSnapshot() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, 0, len(c.channels))
+	for ch := range c.channels {
+		out = append(out, ch)
+	}
+	return out
+}
+
+func (c *miniClient) nickSnapshot() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.nick
 }
 
 func (c *miniClient) writef(format string, args ...any) {
