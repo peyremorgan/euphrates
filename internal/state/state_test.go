@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"sync"
@@ -468,5 +469,128 @@ func TestPromptLabel_StableAcrossPalette(t *testing.T) {
 	label := s.PromptLabel()
 	if !strings.HasSuffix(label, "[-] ") {
 		t.Errorf("dim label doesn't end with reset+space: %q", label)
+	}
+}
+
+func TestCustomGroupingStrategy_ReshufflesOnJoin(t *testing.T) {
+	strategy := groupingStrategyFunc(func(input GroupingInput) (Assignment, bool, error) {
+		assignment := make(Assignment, len(input.Channels))
+		for _, channel := range input.Channels {
+			assignment[channel.Name] = 0
+		}
+		if len(input.Channels) >= 2 {
+			assignment[input.ChangedChannel] = 9
+		}
+		return assignment, true, nil
+	})
+
+	s := New(Config{MessageCap: 100, EventCap: 20, Grouping: strategy})
+	s.JoinChannel("#a")
+	s.JoinChannel("#b")
+
+	a, _ := s.Channel("#a")
+	b, _ := s.Channel("#b")
+	if a.Group != 0 {
+		t.Fatalf("#a group=%d want 0", a.Group)
+	}
+	if b.Group != 9 {
+		t.Fatalf("#b group=%d want 9", b.Group)
+	}
+	if got := s.NumericGroupCount(0); got != 1 {
+		t.Fatalf("group 0 count=%d want 1", got)
+	}
+	if got := s.NumericGroupCount(9); got != 1 {
+		t.Fatalf("group 9 count=%d want 1", got)
+	}
+}
+
+func TestCustomGroupingStrategy_ReshufflesOnPart(t *testing.T) {
+	strategy := groupingStrategyFunc(func(input GroupingInput) (Assignment, bool, error) {
+		assignment := make(Assignment, len(input.Channels))
+		group := GroupID(0)
+		if input.Trigger == GroupingTriggerPart {
+			group = 7
+		}
+		for _, channel := range input.Channels {
+			assignment[channel.Name] = group
+		}
+		return assignment, true, nil
+	})
+
+	s := New(Config{MessageCap: 100, EventCap: 20, Grouping: strategy})
+	s.JoinChannel("#a")
+	s.JoinChannel("#b")
+	s.JoinChannel("#c")
+	s.PartChannel("#b")
+
+	a, _ := s.Channel("#a")
+	c, _ := s.Channel("#c")
+	if a.Group != 7 || c.Group != 7 {
+		t.Fatalf("remaining groups=%d,%d want 7,7", a.Group, c.Group)
+	}
+	if got := s.NumericGroupCount(7); got != 2 {
+		t.Fatalf("group 7 count=%d want 2", got)
+	}
+	if got := s.NormalChannelCount(); got != 2 {
+		t.Fatalf("normal count=%d want 2", got)
+	}
+}
+
+func TestGroupingValidationFailureFallsBackToSeedPlacement(t *testing.T) {
+	strategy := groupingStrategyFunc(func(input GroupingInput) (Assignment, bool, error) {
+		assignment := make(Assignment, 0)
+		for _, channel := range input.Channels {
+			if channel.Name == input.ChangedChannel {
+				continue
+			}
+			assignment[channel.Name] = 0
+		}
+		return assignment, true, nil
+	})
+
+	s := New(Config{MessageCap: 100, EventCap: 20, Grouping: strategy})
+	s.JoinChannel("#a")
+	s.JoinChannel("#b")
+
+	a, _ := s.Channel("#a")
+	b, _ := s.Channel("#b")
+	if a.Group != 0 || b.Group != 1 {
+		t.Fatalf("fallback placement mismatch, groups=%d,%d want 0,1", a.Group, b.Group)
+	}
+
+	logged := false
+	for _, event := range s.Events() {
+		if strings.Contains(event, "grouping assignment rejected") {
+			logged = true
+			break
+		}
+	}
+	if !logged {
+		t.Fatal("expected grouping assignment rejection event")
+	}
+}
+
+func TestGroupingStrategyErrorFallsBackToSeedPlacement(t *testing.T) {
+	strategy := groupingStrategyFunc(func(input GroupingInput) (Assignment, bool, error) {
+		return nil, false, errors.New("broken strategy")
+	})
+
+	s := New(Config{MessageCap: 100, EventCap: 20, Grouping: strategy})
+	s.JoinChannel("#a")
+
+	a, _ := s.Channel("#a")
+	if a.Group != 0 {
+		t.Fatalf("fallback placement mismatch, group=%d want 0", a.Group)
+	}
+
+	logged := false
+	for _, event := range s.Events() {
+		if strings.Contains(event, "grouping strategy error") {
+			logged = true
+			break
+		}
+	}
+	if !logged {
+		t.Fatal("expected grouping strategy error event")
 	}
 }

@@ -21,6 +21,9 @@ type Config struct {
 	EventCap int
 	// ServerName is the short server label shown in the UI status bar.
 	ServerName string
+	// Grouping selects the channel-to-group assignment strategy chain.
+	// Nil means DefaultGroupingStrategy().
+	Grouping GroupingStrategy
 }
 
 // State is the in-memory model of the client. All exported methods are safe
@@ -42,6 +45,7 @@ type State struct {
 	target string // canonical name of the current send target ("" if none)
 
 	serverName string
+	grouping   GroupingStrategy
 }
 
 // New constructs a State with defaults applied for unset Config fields.
@@ -52,6 +56,9 @@ func New(cfg Config) *State {
 	if cfg.EventCap <= 0 {
 		cfg.EventCap = defaultEventCap
 	}
+	if cfg.Grouping == nil {
+		cfg.Grouping = DefaultGroupingStrategy()
+	}
 	s := &State{
 		messages:   NewRing[Message](cfg.MessageCap),
 		events:     NewRing[string](cfg.EventCap),
@@ -59,6 +66,7 @@ func New(cfg Config) *State {
 		listCache:  make(map[string]string),
 		visible:    make(map[GroupID]bool),
 		serverName: cfg.ServerName,
+		grouping:   cfg.Grouping,
 	}
 	for i := 0; i < NumGroups; i++ {
 		s.visible[GroupID(i)] = true
@@ -117,6 +125,9 @@ func (s *State) ensureChannelLocked(name string) *Channel {
 	if s.target == "" && kind != ChanServer {
 		s.target = key
 	}
+	if kind == ChanNormal {
+		s.applyGroupingLocked(GroupingTriggerJoin, key)
+	}
 	return c
 }
 
@@ -143,6 +154,9 @@ func (s *State) PartChannel(name string) {
 	}
 	if s.target == key {
 		s.target = s.firstSendableLocked()
+	}
+	if c.Kind == ChanNormal {
+		s.applyGroupingLocked(GroupingTriggerPart, key)
 	}
 }
 
@@ -476,4 +490,61 @@ func (s *State) firstSendableLocked() string {
 		}
 	}
 	return ""
+}
+
+func (s *State) applyGroupingLocked(trigger GroupingTrigger, changedChannel string) {
+	if s.grouping == nil {
+		return
+	}
+	input := s.makeGroupingInputLocked(trigger, changedChannel)
+	assignment, handled, err := s.grouping.Apply(input)
+	if err != nil {
+		s.events.Push("grouping strategy error: " + err.Error())
+		return
+	}
+	if !handled {
+		return
+	}
+	if err := ValidateAssignment(input, assignment); err != nil {
+		s.events.Push("grouping assignment rejected: " + err.Error())
+		return
+	}
+	s.applyAssignmentLocked(assignment)
+}
+
+func (s *State) makeGroupingInputLocked(trigger GroupingTrigger, changedChannel string) GroupingInput {
+	input := GroupingInput{
+		Trigger:        trigger,
+		ChangedChannel: changedChannel,
+	}
+	input.Channels = make([]ChannelSnapshot, 0, len(s.channels))
+
+	for _, key := range s.order {
+		channel := s.channels[key]
+		if channel == nil || channel.Kind != ChanNormal {
+			continue
+		}
+		input.Channels = append(input.Channels, ChannelSnapshot{
+			Name:      key,
+			Group:     channel.Group,
+			JoinOrder: channel.JoinOrder,
+		})
+		if channel.Group.IsNumeric() {
+			input.Groups[channel.Group] = append(input.Groups[channel.Group], key)
+		}
+	}
+
+	return input
+}
+
+func (s *State) applyAssignmentLocked(assignment Assignment) {
+	s.counts = [NumGroups]int{}
+	for key, group := range assignment {
+		channel := s.channels[key]
+		if channel == nil || channel.Kind != ChanNormal {
+			continue
+		}
+		channel.Group = group
+		s.counts[group]++
+	}
 }
