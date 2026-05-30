@@ -65,6 +65,27 @@ Example:
 Run `./euphrates -h` for the full flag list (SASL, server password, ring
 capacities).
 
+## Grouping Strategies
+
+Euphrates can load ordered Lua grouping strategies from `--grouping-dir`
+(default: `~/.config/euphrates/grouping.d`). Strategies run in lexical filename
+order and the first strategy that returns a valid full assignment is used.
+
+Starter strategies are included in `examples/grouping/`:
+
+- `010_common_prefix.lua`: group a newly joined channel with the existing
+	channel that shares the longest common prefix (minimum 4 characters after the
+	channel sigil).
+- `020_delimiter_stem.lua`: group channels sharing a prefix before `-`, `_`, or
+	`.` (for example `#python-dev`, `#python-help`, `#python-jobs`).
+
+Install them with:
+
+```bash
+mkdir -p ~/.config/euphrates/grouping.d
+cp examples/grouping/*.lua ~/.config/euphrates/grouping.d/
+```
+
 ## Layout
 
 ### Status line
