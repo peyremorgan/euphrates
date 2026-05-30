@@ -3,6 +3,7 @@ package grouping
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -12,6 +13,23 @@ import (
 func writeScript(t *testing.T, dir, name, src string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s): %v", name, err)
+	}
+}
+
+func copyExampleScript(t *testing.T, dir, name string) {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
+	srcPath := filepath.Join(repoRoot, "examples", "grouping", name)
+	src, err := os.ReadFile(srcPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", srcPath, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), src, 0o644); err != nil {
 		t.Fatalf("WriteFile(%s): %v", name, err)
 	}
 }
@@ -143,5 +161,97 @@ end
 	}
 	if !foundReject {
 		t.Fatal("expected assignment rejection event")
+	}
+}
+
+func TestShippedCommonPrefix_GroupsJoinWithLongestPrefix(t *testing.T) {
+	dir := t.TempDir()
+	copyExampleScript(t, dir, "010_common_prefix.lua")
+
+	strategy, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20, Grouping: strategy})
+	a := s.JoinChannel("#project-api")
+	b := s.JoinChannel("#random-chat")
+	c := s.JoinChannel("#project-web")
+
+	if a.Group != 0 {
+		t.Fatalf("#project-api group=%d want 0", a.Group)
+	}
+	if b.Group != 1 {
+		t.Fatalf("#random-chat group=%d want 1", b.Group)
+	}
+	if c.Group != a.Group {
+		t.Fatalf("#project-web group=%d want %d", c.Group, a.Group)
+	}
+}
+
+func TestShippedCommonPrefix_DelegatesWhenPrefixTooShort(t *testing.T) {
+	dir := t.TempDir()
+	copyExampleScript(t, dir, "010_common_prefix.lua")
+
+	strategy, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20, Grouping: strategy})
+	a := s.JoinChannel("#cat-a")
+	b := s.JoinChannel("#car-b")
+
+	if a.Group != 0 {
+		t.Fatalf("#cat-a group=%d want 0", a.Group)
+	}
+	if b.Group != 1 {
+		t.Fatalf("#car-b group=%d want 1 from fallback", b.Group)
+	}
+}
+
+func TestShippedDelimiterStem_GroupsJoinByStem(t *testing.T) {
+	dir := t.TempDir()
+	copyExampleScript(t, dir, "020_delimiter_stem.lua")
+
+	strategy, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20, Grouping: strategy})
+	a := s.JoinChannel("#python-dev")
+	b := s.JoinChannel("#golang-help")
+	c := s.JoinChannel("#python-jobs")
+
+	if a.Group != 0 {
+		t.Fatalf("#python-dev group=%d want 0", a.Group)
+	}
+	if b.Group != 1 {
+		t.Fatalf("#golang-help group=%d want 1", b.Group)
+	}
+	if c.Group != a.Group {
+		t.Fatalf("#python-jobs group=%d want %d", c.Group, a.Group)
+	}
+}
+
+func TestShippedDelimiterStem_DelegatesWhenNoDelimiter(t *testing.T) {
+	dir := t.TempDir()
+	copyExampleScript(t, dir, "020_delimiter_stem.lua")
+
+	strategy, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20, Grouping: strategy})
+	a := s.JoinChannel("#standalone")
+	b := s.JoinChannel("#standalone2")
+
+	if a.Group != 0 {
+		t.Fatalf("#standalone group=%d want 0", a.Group)
+	}
+	if b.Group != 1 {
+		t.Fatalf("#standalone2 group=%d want 1 from fallback", b.Group)
 	}
 }
