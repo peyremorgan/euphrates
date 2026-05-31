@@ -182,6 +182,24 @@ func (u *UI) OnPart(channel string) {
 
 // OnNames replaces the known user roster for channel.
 func (u *UI) OnNames(channel string, nicks []string) {
+	// If we're in this channel, ensure our own nick is in the list.
+	// Some IRC servers or network issues might not include us in NAMES,
+	// but we know we're in the channel if we've joined it.
+	if u.state.IsJoinedNormalChannel(channel) {
+		selfNick := u.sender.Nick()
+		if selfNick != "" {
+			hasSelf := false
+			for _, nick := range nicks {
+				if strings.EqualFold(nick, selfNick) {
+					hasSelf = true
+					break
+				}
+			}
+			if !hasSelf {
+				nicks = append(nicks, selfNick)
+			}
+		}
+	}
 	u.state.SetChannelUsers(channel, nicks)
 	u.app.QueueUpdateDraw(u.refreshUsersPanel)
 }
