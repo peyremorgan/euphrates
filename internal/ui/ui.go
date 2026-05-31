@@ -295,16 +295,16 @@ func (u *UI) refreshSidebar() {
 
 func formatGroupHeader(groupIndex int) string {
 	digit := digitForGroup(groupIndex)
-	// Create a centered header like: ────────────── 1 ──────────────
+	// Create a left-aligned header like: 1 ───────────────────────────
 	const lineChar = "─"
 	const totalWidth = sidebarWidth
 
-	// Account for: " " + digit + " " = 3 chars
-	lineWidth := totalWidth - 3
-	leftWidth := lineWidth / 2
-	rightWidth := lineWidth - leftWidth
+	lineWidth := totalWidth - len(digit) - 1
+	if lineWidth < 1 {
+		lineWidth = 1
+	}
 
-	return strings.Repeat(lineChar, leftWidth) + " " + digit + " " + strings.Repeat(lineChar, rightWidth)
+	return digit + " " + strings.Repeat(lineChar, lineWidth)
 }
 
 func eventsViewHeight(lines int) int {
