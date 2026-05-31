@@ -1,6 +1,18 @@
 # Collapsible Channels Sidebar
 
-Added a collapsible left sidebar that displays all 10 numeric groups (1-0) with their associated channels, toggled via Alt+G. Channels are shown indented under group headers in insertion order. The sidebar uses a fixed width of 30 columns when visible and collapses to 0 when hidden. The main pane and sidebar are separated by a vertical divider, and the sidebar includes a title bar at the top.
+Added a collapsible left sidebar that displays all 10 numeric groups (1-0) with their associated channels, toggled via Alt+G. Channels are shown indented under group headers in insertion order. Group headers now include a visibility indicator (`●` for visible, `○` for hidden), and channel rows now include an active-target indicator (`▶`) for the channel currently selected in the message composer. The sidebar uses a fixed width of 30 columns when visible and collapses to 0 when hidden. The main pane and sidebar are separated by a vertical divider, and the sidebar includes a title bar at the top.
+
+## Indicator behavior
+
+- **Group visibility indicator:** Each numeric group header is prefixed with a circle marker that mirrors the group's visibility state in the main pane:
+	- `●` = group is visible
+	- `○` = group is hidden
+
+- **Active channel indicator:** The channel that will receive the next sent message is prefixed with a plain `▶` marker in the sidebar.
+
+- **Numeric-only sidebar scope:** The sidebar still shows only numeric groups (1-0). If the active target is a non-numeric channel type (server or query), no `▶` marker is shown in the sidebar.
+
+- **Hidden-group active target:** The `▶` marker is still rendered when the active target belongs to a hidden numeric group, so the currently selected send target remains discoverable in the sidebar.
 
 ## Issues encountered
 
@@ -37,6 +49,8 @@ Added a collapsible left sidebar that displays all 10 numeric groups (1-0) with 
 - **Channel sorting within groups is insertion-order only**: Channels appear in the order they were joined. Alphabetical sorting or custom ordering (e.g., by activity, user count) would require additional logic in `refreshSidebar()`. The current implementation relies on `state.Channels()` order, which is stable and predictable.
 
 - **No visual indication of group visibility state**: The sidebar currently shows all channels regardless of whether their group is visible in the main pane. Adding dimming or color-coding for hidden groups (similar to the status bar's bright/dim styling) would provide better visual feedback. The state method `IsVisible(g GroupID)` is available for this.
+
+- **Plain rendering for active target marker**: The active channel marker (`▶`) is intentionally uncolored/plain text to keep channel rows easy to scan and to avoid introducing extra tview color-tag complexity in sidebar content.
 
 - **Sidebar does not receive focus**: The sidebar is marked with `focus: false` in `contentRow.AddItem()`. Keyboard input always goes to the main input field. If sidebar navigation keybindings are added in the future (e.g., j/k to scroll, Enter to set target), focus management will need to be implemented.
 
