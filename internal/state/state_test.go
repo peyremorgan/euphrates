@@ -465,6 +465,33 @@ func TestMatchPartableChannels_CaseInsensitivePrefixAndSort(t *testing.T) {
 	}
 }
 
+func TestListCachedChannels_SortedWithOriginalCasing(t *testing.T) {
+	s := newTestState()
+	s.SetChannelListCache([]string{"#Zoo", "#alpha", "#APPLE"})
+
+	got := s.ListCachedChannels()
+	want := []string{"#alpha", "#APPLE", "#Zoo"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cached=%v want %v", got, want)
+	}
+}
+
+func TestIsJoinedNormalChannel(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#alpha")
+	s.JoinChannel("alice")
+
+	if !s.IsJoinedNormalChannel("#ALPHA") {
+		t.Fatal("expected #alpha to be joined")
+	}
+	if s.IsJoinedNormalChannel("alice") {
+		t.Fatal("query should not be considered a joined normal channel")
+	}
+	if s.IsJoinedNormalChannel("#missing") {
+		t.Fatal("missing channel should not be considered joined")
+	}
+}
+
 func TestServerNotTargetedOnFirstJoin(t *testing.T) {
 	s := newTestState()
 	s.EnsureChannel(ServerChannelName)

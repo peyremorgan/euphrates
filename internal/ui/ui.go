@@ -62,8 +62,11 @@ type UI struct {
 	input            *tview.InputField
 	inputRow         *tview.Flex
 	root             *tview.Flex
+	pages            *tview.Pages
+	browser          *channelBrowser
 	sidebarVisible   bool
 	usersVisible     bool
+	browserVisible   bool
 }
 
 type joinCompletionState struct {
@@ -84,6 +87,7 @@ type commandCompletionState struct {
 var knownCommands = []string{
 	"/help",
 	"/join",
+	"/list",
 	"/me",
 	"/part",
 	"/quit",
@@ -116,7 +120,7 @@ func New(s *state.State, sender Sender) *UI {
 
 // Run starts the tview event loop and blocks until the UI is stopped.
 func (u *UI) Run() error {
-	return u.app.SetRoot(u.root, true).EnableMouse(false).Run()
+	return u.app.SetRoot(u.pages, true).EnableMouse(false).Run()
 }
 
 // Stop ends the tview event loop.
@@ -314,6 +318,11 @@ func (u *UI) buildLayout() {
 	u.root.AddItem(u.separatorView, 1, 0, false)
 	u.root.AddItem(u.eventsView, 5, 0, false)
 	u.root.AddItem(u.inputRow, 1, 0, true)
+
+	u.browser = newChannelBrowser()
+	u.pages = tview.NewPages()
+	u.pages.AddPage("main", u.root, true, true)
+	u.pages.AddPage("browser", centerPrimitive(u.browser.root, browserModalWidth, browserModalHeight), true, false)
 }
 
 // RefreshAll repaints every widget from current state. Called once at
@@ -586,6 +595,29 @@ func (u *UI) bindKeys() {
 // handleKey is exported-shaped (CamelCase semantics) but kept lower-case
 // because it's an internal capture. Returns nil to consume.
 func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
+	if u.browserVisible {
+		if ev.Modifiers()&tcell.ModAlt != 0 && unicode.ToLower(ev.Rune()) == 'l' {
+			u.closeBrowser()
+			return nil
+		}
+		if ev.Key() == tcell.KeyEscape {
+			u.closeBrowser()
+			return nil
+		}
+		if ev.Key() == tcell.KeyEnter {
+			u.joinSelectedBrowserChannel()
+			return nil
+		}
+		if ev.Modifiers()&tcell.ModAlt != 0 && unicode.ToLower(ev.Rune()) == 'j' {
+			u.joinSelectedBrowserChannel()
+			return nil
+		}
+		if u.browser.handleKey(ev) {
+			return nil
+		}
+		return nil
+	}
+
 	// Alt+digit toggles a numeric group.
 	if ev.Modifiers()&tcell.ModAlt != 0 {
 		if unicode.ToLower(ev.Rune()) == 'g' {
@@ -594,6 +626,10 @@ func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		}
 		if unicode.ToLower(ev.Rune()) == 'u' {
 			u.toggleUsersPanel()
+			return nil
+		}
+		if unicode.ToLower(ev.Rune()) == 'l' {
+			u.toggleBrowser()
 			return nil
 		}
 		if g, ok := groupForRune(ev.Rune()); ok {
@@ -732,6 +768,45 @@ func (u *UI) scrollMainDown() {
 	}
 }
 
+func (u *UI) toggleBrowser() {
+	if u.browserVisible {
+		u.closeBrowser()
+		return
+	}
+	u.openBrowser()
+}
+
+func (u *UI) openBrowser() {
+	channels := u.state.ListCachedChannels()
+	u.browser.reset()
+	u.browser.setChannels(channels, u.state.IsJoinedNormalChannel)
+	u.browserVisible = true
+	u.pages.ShowPage("browser")
+	u.pages.SendToFront("browser")
+	u.app.SetFocus(u.browser.root)
+}
+
+func (u *UI) closeBrowser() {
+	if !u.browserVisible {
+		return
+	}
+	u.browserVisible = false
+	u.pages.HidePage("browser")
+	u.app.SetFocus(u.input)
+}
+
+func (u *UI) joinSelectedBrowserChannel() {
+	channel := u.browser.selectedChannel()
+	if channel == "" {
+		return
+	}
+	if err := u.sender.Join(channel); err != nil {
+		u.addEvent("join failed: " + err.Error())
+		return
+	}
+	u.closeBrowser()
+}
+
 func (u *UI) mainAtBottom() bool {
 	row, _ := u.mainView.GetScrollOffset()
 	_, _, _, h := u.mainView.GetRect()
@@ -787,8 +862,10 @@ func (u *UI) handleCommand(line string) {
 	}
 	switch cmd {
 	case "/help":
-		u.addEvent("commands: /help /join /me /part /quit")
-		u.addEvent("usage: /join <channel> | /part [channel] [reason] | /me <action> | /quit [reason]")
+		u.addEvent("commands: /help /join /list /me /part /quit")
+		u.addEvent("usage: /join <channel> | /list | /part [channel] [reason] | /me <action> | /quit [reason]")
+	case "/list":
+		u.openBrowser()
 	case "/me":
 		target := u.state.Target()
 		if target == "" || rest == "" {
