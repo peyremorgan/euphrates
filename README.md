@@ -141,6 +141,7 @@ The input line is prefixed with the current target channel in brackets. The pref
 | Key            | Action                                  |
 | -------------- | --------------------------------------- |
 | Alt+1..0       | Toggle visibility of numeric group 1-10 |
+| Alt-G          | Show/hide channels sidebar              |
 | F1..F10        | Solo numeric group 1-10                 |
 | Ctrl-N         | Next channel (target)                   |
 | Ctrl-P         | Previous channel (target)               |
