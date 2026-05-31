@@ -326,7 +326,7 @@ func TestUsersPanelToggleAndLiveUpdates_E2E(t *testing.T) {
 	}
 
 	u.state.JoinChannel("#a")
-	u.state.SetChannelUsers("#a", []string{"alice", "bob"})
+	u.state.SetChannelUsers("#a", map[string]string{"alice": "", "bob": ""})
 	u.state.AppendMessage(state.Message{Channel: "#a", Nick: "bob", Text: "hi", Kind: state.KindPrivmsg})
 	u.state.SetTarget("#a")
 	u.refreshUsersPanel()

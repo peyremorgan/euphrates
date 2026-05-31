@@ -361,8 +361,8 @@ func TestRefreshUsersPanel_ShowsSortedUsersAndActiveIndicator(t *testing.T) {
 	u, _ := newTestUI(t)
 	u.state.JoinChannel("#a")
 	u.state.JoinChannel("#b")
-	u.state.SetChannelUsers("#a", []string{"alice", "bob"})
-	u.state.SetChannelUsers("#b", []string{"carol"})
+	u.state.SetChannelUsers("#a", map[string]string{"alice": "", "bob": "@"})
+	u.state.SetChannelUsers("#b", map[string]string{"carol": ""})
 	u.state.UpdateUserActivity("#a", "bob", nowForTest())
 	u.state.SetTarget("#a")
 
@@ -377,8 +377,8 @@ func TestRefreshUsersPanel_ShowsSortedUsersAndActiveIndicator(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("lines=%d want 3 (%q)", len(lines), body)
 	}
-	if !strings.Contains(lines[0], "• ") || !strings.Contains(lines[0], "bob") {
-		t.Fatalf("first line should be active bob: %q", lines[0])
+	if !strings.Contains(lines[0], "@ ") || !strings.Contains(lines[0], "bob") {
+		t.Fatalf("first line should be op bob with @: %q", lines[0])
 	}
 	if !strings.Contains(lines[1], "• ") || !strings.Contains(lines[1], "alice") {
 		t.Fatalf("second line should be active alice: %q", lines[1])
@@ -401,25 +401,25 @@ func TestRefreshUsersPanel_SelfAlwaysHasBulletInJoinedChannel(t *testing.T) {
 	// Normally, OnNames would fix this by adding self to the list
 	// But in tests we can't call OnNames (it hangs), so we test the workaround:
 	// We manually ensure self is in the list before calling SetChannelUsers
-	nicks := []string{"alice", "bob"}
-	
+	nicks := map[string]string{"alice": "", "bob": ""}
+
 	// Simulate the fix that OnNames does: check if we're in the channel and add self
 	if u.state.IsJoinedNormalChannel("#test") {
 		selfNick := fs.Nick()
 		hasSelf := false
-		for _, nick := range nicks {
+		for nick := range nicks {
 			if strings.EqualFold(nick, selfNick) {
 				hasSelf = true
 				break
 			}
 		}
 		if !hasSelf {
-			nicks = append(nicks, selfNick)
+			nicks[selfNick] = ""
 		}
 	}
-	
+
 	u.state.SetChannelUsers("#test", nicks)
-	
+
 	// Verify self is in the channel user list
 	targetUsers := u.state.UsersInChannel("#test")
 	if !targetUsers["me"] {
@@ -429,7 +429,7 @@ func TestRefreshUsersPanel_SelfAlwaysHasBulletInJoinedChannel(t *testing.T) {
 	// Verify bullet indicator shows up for self
 	u.refreshUsersPanel()
 	body := u.usersView.GetText(true)
-	
+
 	foundSelfWithBullet := false
 	for _, line := range strings.Split(body, "\n") {
 		if strings.Contains(line, "me") && strings.Contains(line, "• ") {
@@ -448,11 +448,11 @@ func TestOnNamesLogic_DoesNotAddSelfToNonJoinedChannel(t *testing.T) {
 
 	// Don't join the channel - just create it as a query or something
 	// Actually, let's just not join it at all
-	
+
 	// Simulate NAMES for a channel we're NOT in
 	nicks := []string{"alice", "bob"}
 	channel := "#other"
-	
+
 	// The fix should NOT add self if we're not in the channel
 	if u.state.IsJoinedNormalChannel(channel) {
 		selfNick := fs.Nick()
@@ -467,7 +467,7 @@ func TestOnNamesLogic_DoesNotAddSelfToNonJoinedChannel(t *testing.T) {
 			nicks = append(nicks, selfNick)
 		}
 	}
-	
+
 	// nicks should still be just alice and bob
 	if len(nicks) != 2 {
 		t.Fatalf("Expected 2 nicks for non-joined channel, got %d", len(nicks))
@@ -479,11 +479,11 @@ func TestOnNamesLogic_DoesNotDuplicateSelfIfAlreadyInList(t *testing.T) {
 	fs.nick = "me"
 
 	u.state.JoinChannel("#test")
-	
+
 	// Simulate NAMES that DOES include self
 	nicks := []string{"alice", "me", "bob"}
 	channel := "#test"
-	
+
 	// The fix should NOT duplicate self
 	if u.state.IsJoinedNormalChannel(channel) {
 		selfNick := fs.Nick()
@@ -498,12 +498,12 @@ func TestOnNamesLogic_DoesNotDuplicateSelfIfAlreadyInList(t *testing.T) {
 			nicks = append(nicks, selfNick)
 		}
 	}
-	
+
 	// nicks should still be 3 (not 4)
 	if len(nicks) != 3 {
 		t.Fatalf("Expected 3 nicks (no duplicate), got %d", len(nicks))
 	}
-	
+
 	// Verify "me" appears exactly once
 	count := 0
 	for _, nick := range nicks {
@@ -518,14 +518,14 @@ func TestOnNamesLogic_DoesNotDuplicateSelfIfAlreadyInList(t *testing.T) {
 
 func TestOnNamesLogic_HandlesCaseInsensitiveComparison(t *testing.T) {
 	u, fs := newTestUI(t)
-	fs.nick = "FlugGA"  // Mixed case
+	fs.nick = "FlugGA" // Mixed case
 
 	u.state.JoinChannel("#test")
-	
+
 	// Simulate NAMES with lowercase version of self
 	nicks := []string{"alice", "flugga", "bob"}
 	channel := "#test"
-	
+
 	// The fix should recognize "flugga" as self despite different casing
 	if u.state.IsJoinedNormalChannel(channel) {
 		selfNick := fs.Nick()
@@ -540,7 +540,7 @@ func TestOnNamesLogic_HandlesCaseInsensitiveComparison(t *testing.T) {
 			nicks = append(nicks, selfNick)
 		}
 	}
-	
+
 	// Should not add duplicate
 	if len(nicks) != 3 {
 		t.Fatalf("Expected 3 nicks (case-insensitive match), got %d", len(nicks))
@@ -552,11 +552,11 @@ func TestOnNamesLogic_HandlesEmptyNamesList(t *testing.T) {
 	fs.nick = "me"
 
 	u.state.JoinChannel("#test")
-	
+
 	// Simulate empty NAMES (weird but possible)
 	nicks := []string{}
 	channel := "#test"
-	
+
 	// The fix should add self
 	if u.state.IsJoinedNormalChannel(channel) {
 		selfNick := fs.Nick()
@@ -573,7 +573,7 @@ func TestOnNamesLogic_HandlesEmptyNamesList(t *testing.T) {
 			}
 		}
 	}
-	
+
 	// Should have just self
 	if len(nicks) != 1 {
 		t.Fatalf("Expected 1 nick (self), got %d", len(nicks))

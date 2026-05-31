@@ -512,8 +512,8 @@ func TestUsersSortedByActivity_DeduplicatedAndSorted(t *testing.T) {
 	t0 := time.Now().Add(-2 * time.Minute)
 	t1 := time.Now().Add(-1 * time.Minute)
 
-	s.SetChannelUsers("#a", []string{"bob", "alice", "zoe"})
-	s.SetChannelUsers("#b", []string{"alice", "carol"})
+	s.SetChannelUsers("#a", map[string]string{"bob": "", "alice": "", "zoe": ""})
+	s.SetChannelUsers("#b", map[string]string{"alice": "", "carol": ""})
 	s.UpdateUserActivity("#a", "alice", t1)
 	s.UpdateUserActivity("#b", "bob", t0)
 
@@ -547,15 +547,84 @@ func TestUsersSortedByActivity_DeduplicatedAndSorted(t *testing.T) {
 func TestSetChannelUsers_ReplacesSnapshotAndPrunesUsers(t *testing.T) {
 	s := newTestState()
 	s.JoinChannel("#a")
-	s.SetChannelUsers("#a", []string{"alice", "bob"})
+	s.SetChannelUsers("#a", map[string]string{"alice": "", "bob": ""})
 	if got := len(s.UsersSortedByActivity()); got != 2 {
 		t.Fatalf("users=%d want 2", got)
 	}
 
-	s.SetChannelUsers("#a", []string{"alice"})
+	s.SetChannelUsers("#a", map[string]string{"alice": ""})
 	users := s.UsersSortedByActivity()
 	if len(users) != 1 || users[0].Nick != "alice" {
 		t.Fatalf("users after replace=%+v want only alice", users)
+	}
+}
+
+func TestSetChannelUsers_TracksPrefixes(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#a")
+	s.SetChannelUsers("#a", map[string]string{"alice": "@", "bob": "+"})
+
+	if got := s.UserHighestPrefix("#a", "alice"); got != "@" {
+		t.Fatalf("alice prefix=%q want @", got)
+	}
+	if got := s.UserHighestPrefix("#a", "bob"); got != "+" {
+		t.Fatalf("bob prefix=%q want +", got)
+	}
+}
+
+func TestApplyUserMode_AddAndRemove(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#a")
+	s.SetChannelUsers("#a", map[string]string{"alice": ""})
+
+	s.ApplyUserMode("#a", "alice", 'o', true)
+	if got := s.UserHighestPrefix("#a", "alice"); got != "@" {
+		t.Fatalf("prefix after +o=%q want @", got)
+	}
+
+	s.ApplyUserMode("#a", "alice", 'v', true)
+	if got := s.UserHighestPrefix("#a", "alice"); got != "@" {
+		t.Fatalf("prefix after +v should stay @, got %q", got)
+	}
+
+	s.ApplyUserMode("#a", "alice", 'o', false)
+	if got := s.UserHighestPrefix("#a", "alice"); got != "+" {
+		t.Fatalf("prefix after -o=%q want +", got)
+	}
+
+	s.ApplyUserMode("#a", "alice", 'v', false)
+	if got := s.UserHighestPrefix("#a", "alice"); got != "" {
+		t.Fatalf("prefix after -v=%q want empty", got)
+	}
+}
+
+func TestUserModes_ClearedOnUserRemovalAndPart(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#a")
+	s.SetChannelUsers("#a", map[string]string{"alice": "@", "bob": "+"})
+
+	s.RemoveUserFromChannel("#a", "alice")
+	if got := s.UserHighestPrefix("#a", "alice"); got != "" {
+		t.Fatalf("alice prefix after remove=%q want empty", got)
+	}
+
+	s.PartChannel("#a")
+	if got := s.UserHighestPrefix("#a", "bob"); got != "" {
+		t.Fatalf("bob prefix after part=%q want empty", got)
+	}
+}
+
+func TestRenameUserInAllChannels_CarriesPrefixes(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#a")
+	s.SetChannelUsers("#a", map[string]string{"alice": "@"})
+
+	s.RenameUserInAllChannels("alice", "alicia")
+	if got := s.UserHighestPrefix("#a", "alicia"); got != "@" {
+		t.Fatalf("alicia prefix=%q want @", got)
+	}
+	if got := s.UserHighestPrefix("#a", "alice"); got != "" {
+		t.Fatalf("old nick prefix=%q want empty", got)
 	}
 }
 
@@ -588,7 +657,7 @@ func TestRenameAndRemoveUserMembership(t *testing.T) {
 func TestPartChannel_DropsChannelUsers(t *testing.T) {
 	s := newTestState()
 	s.JoinChannel("#a")
-	s.SetChannelUsers("#a", []string{"alice", "bob"})
+	s.SetChannelUsers("#a", map[string]string{"alice": "", "bob": ""})
 	s.PartChannel("#a")
 	if got := len(s.UsersSortedByActivity()); got != 0 {
 		t.Fatalf("users after part=%d want 0", got)

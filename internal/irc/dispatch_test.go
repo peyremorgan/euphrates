@@ -22,13 +22,14 @@ type recorder struct {
 	userParts      []string
 	userQuits      []string
 	userNicks      []string
-	namesByChannel map[string][]string
+	userModes      []string
+	namesByChannel map[string]map[string]string
 }
 
 var timestampPrefixPattern = regexp.MustCompile(`^\d\d:\d\d:\d\d\s`)
 
 func newRecorder(self string) (*recorder, Handlers) {
-	r := &recorder{self: self, namesByChannel: make(map[string][]string)}
+	r := &recorder{self: self, namesByChannel: make(map[string]map[string]string)}
 	return r, Handlers{
 		Self:      func() string { return r.self },
 		OnMessage: func(m state.Message) { r.messages = append(r.messages, m) },
@@ -47,9 +48,14 @@ func newRecorder(self string) (*recorder, Handlers) {
 		OnUserNick: func(oldNick, newNick string) {
 			r.userNicks = append(r.userNicks, oldNick+"->"+newNick)
 		},
-		OnNames: func(channel string, nicks []string) {
-			cp := make([]string, len(nicks))
-			copy(cp, nicks)
+		OnUserMode: func(channel, nick string, mode rune, adding bool) {
+			r.userModes = append(r.userModes, channel+":"+nick+":"+string(mode)+":"+boolString(adding))
+		},
+		OnNames: func(channel string, users map[string]string) {
+			cp := make(map[string]string, len(users))
+			for nick, prefixes := range users {
+				cp[nick] = prefixes
+			}
 			r.namesByChannel[channel] = cp
 		},
 		OnChannelList: func(names []string) {
@@ -58,6 +64,13 @@ func newRecorder(self string) (*recorder, Handlers) {
 			r.lists = append(r.lists, cp)
 		},
 	}
+}
+
+func boolString(v bool) string {
+	if v {
+		return "+"
+	}
+	return "-"
 }
 
 func assertHasTimestampPrefix(t *testing.T, line string) {
@@ -273,9 +286,19 @@ func TestDispatchNamesReply_ParsesPrefixes(t *testing.T) {
 	r, h := newRecorder("me")
 	dispatchNamesReply(h, []string{"me", "=", "#go", "@alice +bob carol!u@h"})
 	got := r.namesByChannel["#go"]
-	want := []string{"alice", "bob", "carol"}
+	want := map[string]string{"alice": "@", "bob": "+", "carol": ""}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("names=%v want %v", got, want)
+	}
+}
+
+func TestParseNamesEntry(t *testing.T) {
+	nick, prefixes := parseNamesEntry("~&@alice!u@host")
+	if nick != "alice" {
+		t.Fatalf("nick=%q want alice", nick)
+	}
+	if prefixes != "~&@" {
+		t.Fatalf("prefixes=%q want ~&@", prefixes)
 	}
 }
 
@@ -328,7 +351,27 @@ func TestDispatchMode(t *testing.T) {
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "+o alice") {
 		t.Errorf("mode event: %+v", r.events)
 	}
+	if !reflect.DeepEqual(r.userModes, []string{"#foo:alice:o:+"}) {
+		t.Fatalf("user modes=%v", r.userModes)
+	}
 	assertHasTimestampPrefix(t, r.events[0])
+}
+
+func TestDispatchMode_MixedModeString(t *testing.T) {
+	r, h := newRecorder("me")
+	dispatchMode(h, "op!u@host", "#foo", []string{"+ov-k", "alice", "bob", "secret"})
+	want := []string{"#foo:alice:o:+", "#foo:bob:v:+"}
+	if !reflect.DeepEqual(r.userModes, want) {
+		t.Fatalf("user modes=%v want %v", r.userModes, want)
+	}
+}
+
+func TestDispatchMode_IgnoresNonChannelTarget(t *testing.T) {
+	r, h := newRecorder("me")
+	dispatchMode(h, "server", "alice", []string{"+o", "alice"})
+	if len(r.userModes) != 0 {
+		t.Fatalf("unexpected user modes=%v", r.userModes)
+	}
 }
 
 // --- dispatchServerNumeric -----------------------------------------------
