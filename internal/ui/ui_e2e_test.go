@@ -232,3 +232,41 @@ func TestSidebarToggleAndJoinUpdates_E2E(t *testing.T) {
 		t.Fatalf("group 1 header not found:\n%s", got)
 	}
 }
+
+func TestUsersPanelToggleAndLiveUpdates_E2E(t *testing.T) {
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20})
+	fs := &fakeSender{nick: "me"}
+	u := New(s, fs)
+
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyRune, 'u', tcell.ModAlt)); got != nil {
+		t.Fatalf("Alt+u not consumed")
+	}
+	if !u.usersVisible {
+		t.Fatal("users panel should be visible")
+	}
+
+	u.state.JoinChannel("#a")
+	u.state.SetChannelUsers("#a", []string{"alice", "bob"})
+	u.state.AppendMessage(state.Message{Channel: "#a", Nick: "bob", Text: "hi", Kind: state.KindPrivmsg})
+	u.state.SetTarget("#a")
+	u.refreshUsersPanel()
+
+	title := u.usersTitleView.GetText(true)
+	if !strings.Contains(title, "Users — 2") {
+		t.Fatalf("users title=%q want count 2", title)
+	}
+	body := u.usersView.GetText(true)
+	if !strings.Contains(body, "bob") || !strings.Contains(body, "alice") {
+		t.Fatalf("users panel body missing users: %q", body)
+	}
+	if !strings.Contains(body, "•") {
+		t.Fatalf("users panel missing active-channel indicator: %q", body)
+	}
+
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyRune, 'U', tcell.ModAlt)); got != nil {
+		t.Fatalf("Alt+U not consumed")
+	}
+	if u.usersVisible {
+		t.Fatal("users panel should be hidden after second toggle")
+	}
+}
