@@ -438,11 +438,13 @@ func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyCtrlN:
 		u.state.NextChannel()
 		u.refreshStatus()
+		u.refreshSidebar()
 		u.refreshPrompt()
 		return nil
 	case tcell.KeyCtrlP:
 		u.state.PrevChannel()
 		u.refreshStatus()
+		u.refreshSidebar()
 		u.refreshPrompt()
 		return nil
 	case tcell.KeyCtrlC:

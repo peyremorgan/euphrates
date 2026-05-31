@@ -880,6 +880,31 @@ func TestHandleKey_CtrlNCyclesForward(t *testing.T) {
 	}
 }
 
+func TestHandleKey_CtrlNRefreshesSidebarTargetIndicator(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.EnsureChannel("#a")
+	u.state.EnsureChannel("#b")
+	u.refreshSidebar()
+
+	before := u.sidebarView.GetText(true)
+	if !strings.Contains(before, "▶ #a") {
+		t.Fatalf("expected initial sidebar target marker on #a, got:\n%s", before)
+	}
+
+	ev := tcell.NewEventKey(tcell.KeyCtrlN, 0, tcell.ModCtrl)
+	if u.handleKey(ev) != nil {
+		t.Error("Ctrl-N not consumed")
+	}
+
+	after := u.sidebarView.GetText(true)
+	if !strings.Contains(after, "▶ #b") {
+		t.Fatalf("expected sidebar target marker on #b after Ctrl-N, got:\n%s", after)
+	}
+	if strings.Contains(after, "▶ #a") {
+		t.Fatalf("sidebar target marker still on #a after Ctrl-N:\n%s", after)
+	}
+}
+
 func TestHandleKey_CtrlPCyclesBackward(t *testing.T) {
 	u, _ := newTestUI(t)
 	u.state.EnsureChannel("#a")
@@ -890,6 +915,31 @@ func TestHandleKey_CtrlPCyclesBackward(t *testing.T) {
 	}
 	if u.state.Target() != "#b" {
 		t.Errorf("target after Ctrl-P=%q", u.state.Target())
+	}
+}
+
+func TestHandleKey_CtrlPRefreshesSidebarTargetIndicator(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.EnsureChannel("#a")
+	u.state.EnsureChannel("#b")
+	u.refreshSidebar()
+
+	before := u.sidebarView.GetText(true)
+	if !strings.Contains(before, "▶ #a") {
+		t.Fatalf("expected initial sidebar target marker on #a, got:\n%s", before)
+	}
+
+	ev := tcell.NewEventKey(tcell.KeyCtrlP, 0, tcell.ModCtrl)
+	if u.handleKey(ev) != nil {
+		t.Error("Ctrl-P not consumed")
+	}
+
+	after := u.sidebarView.GetText(true)
+	if !strings.Contains(after, "▶ #b") {
+		t.Fatalf("expected sidebar target marker on #b after Ctrl-P, got:\n%s", after)
+	}
+	if strings.Contains(after, "▶ #a") {
+		t.Fatalf("sidebar target marker still on #a after Ctrl-P:\n%s", after)
 	}
 }
 
