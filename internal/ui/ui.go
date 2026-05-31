@@ -41,6 +41,7 @@ type UI struct {
 	statusCountView *tview.TextView
 	statusRow       *tview.Flex
 	sidebarView     *tview.TextView
+	sidebarDivider  *tview.TextView
 	contentRow      *tview.Flex
 	mainView        *tview.TextView
 	separatorView   *tview.TextView
@@ -58,6 +59,7 @@ type joinCompletionState struct {
 }
 
 const dottedSeparatorRune = "┄"
+const sidebarDividerRune = "│"
 const maxEventsViewRows = 5
 const sidebarWidth = 30
 
@@ -70,6 +72,7 @@ func New(s *state.State, sender Sender) *UI {
 	}
 	u.buildLayout()
 	u.app.SetBeforeDrawFunc(func(tcell.Screen) bool {
+		u.refreshSidebarDivider()
 		u.refreshSeparator()
 		return false
 	})
@@ -167,6 +170,9 @@ func (u *UI) buildLayout() {
 		SetScrollable(true).
 		SetWrap(false)
 	u.sidebarView.SetTextColor(tcell.GetColor(chrome.EventsForeground))
+	u.sidebarDivider = tview.NewTextView().
+		SetDynamicColors(true).
+		SetWrap(false)
 	u.mainView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetScrollable(true).
@@ -174,6 +180,7 @@ func (u *UI) buildLayout() {
 		SetWordWrap(true)
 	u.contentRow = tview.NewFlex().SetDirection(tview.FlexColumn)
 	u.contentRow.AddItem(u.sidebarView, 0, 0, false)
+	u.contentRow.AddItem(u.sidebarDivider, 0, 0, false)
 	u.contentRow.AddItem(u.mainView, 0, 1, false)
 	u.separatorView = tview.NewTextView().
 		SetDynamicColors(true).
@@ -208,6 +215,7 @@ func (u *UI) RefreshAll() {
 	u.refreshStatus()
 	u.refreshSidebar()
 	u.refreshMain()
+	u.refreshSidebarDivider()
 	u.refreshSeparator()
 	u.refreshEvents()
 	u.refreshPrompt()
@@ -276,6 +284,33 @@ func eventsViewHeight(lines int) int {
 		return maxEventsViewRows
 	}
 	return lines
+}
+
+func (u *UI) refreshSidebarDivider() {
+	if u.sidebarDivider == nil || !u.sidebarVisible {
+		if u.sidebarDivider != nil {
+			u.sidebarDivider.SetText("")
+		}
+		return
+	}
+	_, _, _, height := u.sidebarDivider.GetRect()
+	if height <= 0 {
+		_, _, _, height = u.contentRow.GetRect()
+	}
+	if height <= 0 {
+		u.sidebarDivider.SetText("")
+		return
+	}
+
+	var b strings.Builder
+	for i := 0; i < height; i++ {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(sidebarDividerRune)
+	}
+	sepColor := state.ActiveChromeTheme().Separator
+	u.sidebarDivider.SetText("[" + sepColor + "]" + b.String() + state.ResetColor())
 }
 
 func (u *UI) refreshSeparator() {
@@ -407,10 +442,14 @@ func (u *UI) toggleSidebar() {
 	u.sidebarVisible = !u.sidebarVisible
 	if u.sidebarVisible {
 		u.refreshSidebar()
+		u.refreshSidebarDivider()
 		u.contentRow.ResizeItem(u.sidebarView, sidebarWidth, 0)
+		u.contentRow.ResizeItem(u.sidebarDivider, 1, 0)
 		return
 	}
 	u.contentRow.ResizeItem(u.sidebarView, 0, 0)
+	u.contentRow.ResizeItem(u.sidebarDivider, 0, 0)
+	u.sidebarDivider.SetText("")
 }
 
 func (u *UI) soloGroup(g state.GroupID) {

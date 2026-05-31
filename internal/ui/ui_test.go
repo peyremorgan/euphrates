@@ -104,14 +104,17 @@ func TestBuildLayout_IncludesSeparatorBetweenMainAndEvents(t *testing.T) {
 	if got := u.root.GetItem(1); got != u.contentRow {
 		t.Fatalf("item 1 is %T, want content row", got)
 	}
-	if got := u.contentRow.GetItemCount(); got != 2 {
-		t.Fatalf("content row item count=%d want 2", got)
+	if got := u.contentRow.GetItemCount(); got != 3 {
+		t.Fatalf("content row item count=%d want 3", got)
 	}
 	if got := u.contentRow.GetItem(0); got != u.sidebarView {
 		t.Fatalf("content row item 0 is %T, want sidebar view", got)
 	}
-	if got := u.contentRow.GetItem(1); got != u.mainView {
-		t.Fatalf("content row item 1 is %T, want main view", got)
+	if got := u.contentRow.GetItem(1); got != u.sidebarDivider {
+		t.Fatalf("content row item 1 is %T, want sidebar divider", got)
+	}
+	if got := u.contentRow.GetItem(2); got != u.mainView {
+		t.Fatalf("content row item 2 is %T, want main view", got)
 	}
 }
 
@@ -155,22 +158,34 @@ func TestToggleSidebar_ResizesContentRow(t *testing.T) {
 
 	drawUIRoot(t, u, 100, 20)
 	_, _, hiddenW, _ := u.sidebarView.GetRect()
+	_, _, hiddenDividerW, _ := u.sidebarDivider.GetRect()
 	if hiddenW != 0 {
 		t.Fatalf("hidden sidebar width=%d want 0", hiddenW)
+	}
+	if hiddenDividerW != 0 {
+		t.Fatalf("hidden divider width=%d want 0", hiddenDividerW)
 	}
 
 	u.toggleSidebar()
 	drawUIRoot(t, u, 100, 20)
 	_, _, shownW, _ := u.sidebarView.GetRect()
+	_, _, shownDividerW, _ := u.sidebarDivider.GetRect()
 	if shownW != sidebarWidth {
 		t.Fatalf("shown sidebar width=%d want %d", shownW, sidebarWidth)
+	}
+	if shownDividerW != 1 {
+		t.Fatalf("shown divider width=%d want 1", shownDividerW)
 	}
 
 	u.toggleSidebar()
 	drawUIRoot(t, u, 100, 20)
 	_, _, hiddenAgainW, _ := u.sidebarView.GetRect()
+	_, _, hiddenAgainDividerW, _ := u.sidebarDivider.GetRect()
 	if hiddenAgainW != 0 {
 		t.Fatalf("hidden-again sidebar width=%d want 0", hiddenAgainW)
+	}
+	if hiddenAgainDividerW != 0 {
+		t.Fatalf("hidden-again divider width=%d want 0", hiddenAgainDividerW)
 	}
 }
 
