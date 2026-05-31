@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -39,6 +40,8 @@ type UI struct {
 	statusView      *tview.TextView
 	statusCountView *tview.TextView
 	statusRow       *tview.Flex
+	sidebarView     *tview.TextView
+	contentRow      *tview.Flex
 	mainView        *tview.TextView
 	separatorView   *tview.TextView
 	eventsView      *tview.TextView
@@ -46,6 +49,7 @@ type UI struct {
 	input           *tview.InputField
 	inputRow        *tview.Flex
 	root            *tview.Flex
+	sidebarVisible  bool
 }
 
 type joinCompletionState struct {
@@ -55,6 +59,7 @@ type joinCompletionState struct {
 
 const dottedSeparatorRune = "┄"
 const maxEventsViewRows = 5
+const sidebarWidth = 30
 
 // New builds a UI bound to the given state and Sender.
 func New(s *state.State, sender Sender) *UI {
@@ -118,6 +123,7 @@ func (u *UI) OnJoin(channel string) {
 	u.state.JoinChannel(channel)
 	u.app.QueueUpdateDraw(func() {
 		u.refreshStatus()
+		u.refreshSidebar()
 		u.refreshPrompt()
 	})
 }
@@ -156,11 +162,19 @@ func (u *UI) buildLayout() {
 	u.statusRow = tview.NewFlex().SetDirection(tview.FlexColumn)
 	u.statusRow.AddItem(u.statusView, 0, 1, false)
 	u.statusRow.AddItem(u.statusCountView, 0, 0, false)
+	u.sidebarView = tview.NewTextView().
+		SetDynamicColors(true).
+		SetScrollable(true).
+		SetWrap(false)
+	u.sidebarView.SetTextColor(tcell.GetColor(chrome.EventsForeground))
 	u.mainView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetScrollable(true).
 		SetWrap(true).
 		SetWordWrap(true)
+	u.contentRow = tview.NewFlex().SetDirection(tview.FlexColumn)
+	u.contentRow.AddItem(u.sidebarView, 0, 0, false)
+	u.contentRow.AddItem(u.mainView, 0, 1, false)
 	u.separatorView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(false)
@@ -182,7 +196,7 @@ func (u *UI) buildLayout() {
 
 	u.root = tview.NewFlex().SetDirection(tview.FlexRow)
 	u.root.AddItem(u.statusRow, 1, 0, false)
-	u.root.AddItem(u.mainView, 0, 1, false)
+	u.root.AddItem(u.contentRow, 0, 1, false)
 	u.root.AddItem(u.separatorView, 1, 0, false)
 	u.root.AddItem(u.eventsView, 5, 0, false)
 	u.root.AddItem(u.inputRow, 1, 0, true)
@@ -192,6 +206,7 @@ func (u *UI) buildLayout() {
 // startup; not normally needed thereafter.
 func (u *UI) RefreshAll() {
 	u.refreshStatus()
+	u.refreshSidebar()
 	u.refreshMain()
 	u.refreshSeparator()
 	u.refreshEvents()
@@ -225,6 +240,32 @@ func (u *UI) refreshEvents() {
 	for _, line := range events {
 		_, _ = fmt.Fprintln(u.eventsView, line)
 	}
+}
+
+func (u *UI) refreshSidebar() {
+	channels := u.state.Channels()
+	grouped := make([][]string, state.NumGroups)
+	for _, c := range channels {
+		if !c.Group.IsNumeric() {
+			continue
+		}
+		grouped[int(c.Group)] = append(grouped[int(c.Group)], c.Name)
+	}
+
+	var b strings.Builder
+	for i := 0; i < state.NumGroups; i++ {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(digitForGroup(i))
+		b.WriteString(" -------------")
+		for _, name := range grouped[i] {
+			b.WriteByte('\n')
+			b.WriteString("  ")
+			b.WriteString(state.Escape(name))
+		}
+	}
+	u.sidebarView.SetText(b.String())
 }
 
 func eventsViewHeight(lines int) int {
@@ -271,6 +312,7 @@ func (u *UI) refreshPrompt() {
 // that may change which messages are visible (toggle, part).
 func (u *UI) refreshAfterStructuralChange() {
 	u.refreshStatus()
+	u.refreshSidebar()
 	u.refreshMain()
 	u.refreshPrompt()
 }
@@ -286,6 +328,10 @@ func (u *UI) bindKeys() {
 func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 	// Alt+digit toggles a numeric group.
 	if ev.Modifiers()&tcell.ModAlt != 0 {
+		if unicode.ToLower(ev.Rune()) == 'g' {
+			u.toggleSidebar()
+			return nil
+		}
 		if g, ok := groupForRune(ev.Rune()); ok {
 			u.toggleGroup(g)
 			return nil
@@ -355,6 +401,16 @@ func groupForFunctionKey(k tcell.Key) (state.GroupID, bool) {
 func (u *UI) toggleGroup(g state.GroupID) {
 	u.state.ToggleGroup(g)
 	u.refreshAfterStructuralChange()
+}
+
+func (u *UI) toggleSidebar() {
+	u.sidebarVisible = !u.sidebarVisible
+	if u.sidebarVisible {
+		u.refreshSidebar()
+		u.contentRow.ResizeItem(u.sidebarView, sidebarWidth, 0)
+		return
+	}
+	u.contentRow.ResizeItem(u.sidebarView, 0, 0)
 }
 
 func (u *UI) soloGroup(g state.GroupID) {
