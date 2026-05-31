@@ -981,7 +981,7 @@ func (u *UI) tryJoinCompletion() bool {
 		return true
 	}
 	if len(matches) == 1 {
-		u.input.SetText("/join " + matches[0])
+		u.input.SetText("/join " + matches[0] + " ")
 		return true
 	}
 
@@ -1018,7 +1018,7 @@ func (u *UI) tryPartCompletion() bool {
 		return true
 	}
 	if len(matches) == 1 {
-		u.input.SetText("/part " + matches[0])
+		u.input.SetText("/part " + matches[0] + " ")
 		return true
 	}
 

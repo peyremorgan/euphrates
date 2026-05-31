@@ -38,8 +38,8 @@ func TestJoinCompletionFlow_E2E(t *testing.T) {
 	if got := u.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)); got != nil {
 		t.Fatalf("tab not consumed at partial")
 	}
-	if got := u.input.GetText(); got != "/join #golang" {
-		t.Fatalf("input=%q want /join #golang", got)
+	if got := u.input.GetText(); got != "/join #golang " {
+		t.Fatalf("input=%q want /join #golang ", got)
 	}
 
 	// Submit /join command end-to-end through input handler.

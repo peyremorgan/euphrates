@@ -839,7 +839,7 @@ func TestTryJoinCompletion_SingleMatch(t *testing.T) {
 	if !u.tryJoinCompletion() {
 		t.Fatal("completion not consumed")
 	}
-	if got := u.input.GetText(); got != "/join #golang" {
+	if got := u.input.GetText(); got != "/join #golang " {
 		t.Fatalf("input=%q", got)
 	}
 }
@@ -952,7 +952,7 @@ func TestTryJoinCompletion_ExcludesAlreadyJoinedChannels(t *testing.T) {
 	if !u.tryJoinCompletion() {
 		t.Fatal("completion not consumed")
 	}
-	if got := u.input.GetText(); got != "/join #golang" {
+	if got := u.input.GetText(); got != "/join #golang " {
 		t.Fatalf("expected joined channel exclusion, got %q", got)
 	}
 }
@@ -966,7 +966,7 @@ func TestTryPartCompletion_SingleMatch(t *testing.T) {
 	if !u.tryPartCompletion() {
 		t.Fatal("completion not consumed")
 	}
-	if got := u.input.GetText(); got != "/part #golang" {
+	if got := u.input.GetText(); got != "/part #golang " {
 		t.Fatalf("input=%q", got)
 	}
 }
@@ -1167,7 +1167,7 @@ func TestHandleKey_TabCompletesJoin(t *testing.T) {
 	if got := u.handleKey(ev); got != nil {
 		t.Fatal("tab not consumed")
 	}
-	if got := u.input.GetText(); got != "/join #golang" {
+	if got := u.input.GetText(); got != "/join #golang " {
 		t.Fatalf("input=%q", got)
 	}
 }
@@ -1180,7 +1180,7 @@ func TestHandleKey_TabCompletesPart(t *testing.T) {
 	if got := u.handleKey(ev); got != nil {
 		t.Fatal("tab not consumed")
 	}
-	if got := u.input.GetText(); got != "/part #golang" {
+	if got := u.input.GetText(); got != "/part #golang " {
 		t.Fatalf("input=%q", got)
 	}
 }
@@ -1205,7 +1205,7 @@ func TestHandleKey_TabFallsBackToPartAfterJoinMiss(t *testing.T) {
 	if got := u.handleKey(ev); got != nil {
 		t.Fatal("tab not consumed")
 	}
-	if got := u.input.GetText(); got != "/part #go" {
+	if got := u.input.GetText(); got != "/part #go " {
 		t.Fatalf("input=%q", got)
 	}
 }
