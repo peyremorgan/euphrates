@@ -37,22 +37,22 @@ type UI struct {
 
 	joinCompletion joinCompletionState
 
-	statusView      *tview.TextView
-	statusCountView *tview.TextView
-	statusRow       *tview.Flex
+	statusView       *tview.TextView
+	statusCountView  *tview.TextView
+	statusRow        *tview.Flex
 	sidebarView      *tview.TextView
 	sidebarTitleView *tview.TextView
 	sidebarCol       *tview.Flex
 	sidebarDivider   *tview.TextView
 	contentRow       *tview.Flex
-	mainView        *tview.TextView
-	separatorView   *tview.TextView
-	eventsView      *tview.TextView
-	promptView      *tview.TextView
-	input           *tview.InputField
-	inputRow        *tview.Flex
-	root            *tview.Flex
-	sidebarVisible  bool
+	mainView         *tview.TextView
+	separatorView    *tview.TextView
+	eventsView       *tview.TextView
+	promptView       *tview.TextView
+	input            *tview.InputField
+	inputRow         *tview.Flex
+	root             *tview.Flex
+	sidebarVisible   bool
 }
 
 type joinCompletionState struct {
@@ -283,8 +283,7 @@ func (u *UI) refreshSidebar() {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(digitForGroup(i))
-		b.WriteString(" -------------")
+		b.WriteString(formatGroupHeader(i))
 		for _, name := range grouped[i] {
 			b.WriteByte('\n')
 			b.WriteString("  ")
@@ -292,6 +291,20 @@ func (u *UI) refreshSidebar() {
 		}
 	}
 	u.sidebarView.SetText(b.String())
+}
+
+func formatGroupHeader(groupIndex int) string {
+	digit := digitForGroup(groupIndex)
+	// Create a centered header like: ────────────── 1 ──────────────
+	const lineChar = "─"
+	const totalWidth = sidebarWidth
+
+	// Account for: " " + digit + " " = 3 chars
+	lineWidth := totalWidth - 3
+	leftWidth := lineWidth / 2
+	rightWidth := lineWidth - leftWidth
+
+	return strings.Repeat(lineChar, leftWidth) + " " + digit + " " + strings.Repeat(lineChar, rightWidth)
 }
 
 func eventsViewHeight(lines int) int {

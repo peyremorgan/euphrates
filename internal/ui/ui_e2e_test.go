@@ -152,12 +152,36 @@ func TestSidebarToggleAndJoinUpdates_E2E(t *testing.T) {
 	u.refreshSidebar()
 
 	got := u.sidebarView.GetText(true)
-	for _, want := range []string{"1 -------------", "2 -------------", "0 -------------", "  #a", "  #k"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("sidebar missing %q in %q", want, got)
+	// Check for group headers with horizontal lines and channels
+	for _, digit := range []string{"1", "2", "0"} {
+		found := false
+		for _, line := range strings.Split(got, "\n") {
+			if strings.Contains(line, digit) && strings.Contains(line, "─") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("sidebar missing group header for %q in %q", digit, got)
 		}
 	}
-	if !strings.Contains(got, "1 -------------\n  #a\n  #k") {
-		t.Fatalf("group 1 ordering wrong:\n%s", got)
+	if !strings.Contains(got, "  #a") || !strings.Contains(got, "  #k") {
+		t.Fatalf("sidebar missing channels in %q", got)
+	}
+	// Verify group 1 has channels in insertion order
+	lines := strings.Split(got, "\n")
+	foundGroup1 := false
+	for i, line := range lines {
+		if strings.Contains(line, "1") && strings.Contains(line, "─") {
+			foundGroup1 = true
+			// Next two lines should be #a and #k
+			if i+2 < len(lines) && lines[i+1] == "  #a" && lines[i+2] == "  #k" {
+				break
+			}
+			t.Fatalf("group 1 ordering wrong:\n%s", got)
+		}
+	}
+	if !foundGroup1 {
+		t.Fatalf("group 1 header not found:\n%s", got)
 	}
 }
