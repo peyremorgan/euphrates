@@ -128,15 +128,64 @@ func TestRefreshSidebar_ShowsAllGroupHeadersWhenEmpty(t *testing.T) {
 		t.Fatalf("line count=%d want %d", len(lines), state.NumGroups)
 	}
 	for i := 0; i < state.NumGroups; i++ {
-		// Verify that each group header contains the digit and horizontal lines
+		// Each header starts with a visibility indicator and keeps fixed width.
 		digit := digitForGroup(i)
+		if !strings.HasPrefix(lines[i], "● ") {
+			t.Fatalf("line %d=%q missing visible indicator", i, lines[i])
+		}
 		if !strings.Contains(lines[i], digit) {
 			t.Fatalf("line %d=%q missing digit %q", i, lines[i], digit)
 		}
 		if !strings.Contains(lines[i], "─") {
 			t.Fatalf("line %d=%q missing horizontal line characters", i, lines[i])
 		}
+		if w := len([]rune(lines[i])); w != sidebarWidth {
+			t.Fatalf("line %d width=%d want %d (%q)", i, w, sidebarWidth, lines[i])
+		}
 	}
+}
+
+func TestRefreshSidebar_UsesEmptyCircleForHiddenGroups(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.SetVisible(state.GroupID(0), false)
+	u.state.SetVisible(state.GroupID(2), false)
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+	lines := strings.Split(got, "\n")
+	if len(lines) != state.NumGroups {
+		t.Fatalf("line count=%d want %d", len(lines), state.NumGroups)
+	}
+	if !strings.HasPrefix(lines[0], "○ 1 ") {
+		t.Fatalf("group 1 hidden header=%q want prefix %q", lines[0], "○ 1 ")
+	}
+	if !strings.HasPrefix(lines[2], "○ 3 ") {
+		t.Fatalf("group 3 hidden header=%q want prefix %q", lines[2], "○ 3 ")
+	}
+	if !strings.HasPrefix(lines[1], "● 2 ") {
+		t.Fatalf("group 2 visible header=%q want prefix %q", lines[1], "● 2 ")
+	}
+}
+
+func TestFormatGroupHeader_IndicatorAndWidth(t *testing.T) {
+	t.Run("visible", func(t *testing.T) {
+		got := formatGroupHeader(0, true)
+		if !strings.HasPrefix(got, "● 1 ") {
+			t.Fatalf("prefix=%q", got)
+		}
+		if w := len([]rune(got)); w != sidebarWidth {
+			t.Fatalf("width=%d want %d (%q)", w, sidebarWidth, got)
+		}
+	})
+	t.Run("hidden", func(t *testing.T) {
+		got := formatGroupHeader(state.NumGroups-1, false)
+		if !strings.HasPrefix(got, "○ 0 ") {
+			t.Fatalf("prefix=%q", got)
+		}
+		if w := len([]rune(got)); w != sidebarWidth {
+			t.Fatalf("width=%d want %d (%q)", w, sidebarWidth, got)
+		}
+	})
 }
 
 func TestRefreshSidebar_UsesInsertionOrderWithinGroup(t *testing.T) {

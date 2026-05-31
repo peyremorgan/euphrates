@@ -283,7 +283,7 @@ func (u *UI) refreshSidebar() {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(formatGroupHeader(i))
+		b.WriteString(formatGroupHeader(i, u.state.IsVisible(state.GroupID(i))))
 		for _, name := range grouped[i] {
 			b.WriteByte('\n')
 			b.WriteString("  ")
@@ -293,18 +293,28 @@ func (u *UI) refreshSidebar() {
 	u.sidebarView.SetText(b.String())
 }
 
-func formatGroupHeader(groupIndex int) string {
+func formatGroupHeader(groupIndex int, visible bool) string {
 	digit := digitForGroup(groupIndex)
-	// Create a left-aligned header like: 1 ───────────────────────────
+	// Create a left-aligned header like: ● 1 ─────────────────────────
 	const lineChar = "─"
 	const totalWidth = sidebarWidth
+	const indicatorVisible = "●"
+	const indicatorHidden = "○"
+	const indicatorWidth = 2 // circle + trailing space
+	const digitWidth = 1
+	const gapWidth = 1 // spacing between digit and line
 
-	lineWidth := totalWidth - len(digit) - 1
+	lineWidth := totalWidth - indicatorWidth - digitWidth - gapWidth
 	if lineWidth < 1 {
 		lineWidth = 1
 	}
 
-	return digit + " " + strings.Repeat(lineChar, lineWidth)
+	indicator := indicatorHidden
+	if visible {
+		indicator = indicatorVisible
+	}
+
+	return indicator + " " + digit + " " + strings.Repeat(lineChar, lineWidth)
 }
 
 func eventsViewHeight(lines int) int {

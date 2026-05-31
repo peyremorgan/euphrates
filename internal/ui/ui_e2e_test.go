@@ -152,11 +152,11 @@ func TestSidebarToggleAndJoinUpdates_E2E(t *testing.T) {
 	u.refreshSidebar()
 
 	got := u.sidebarView.GetText(true)
-	// Check for group headers with horizontal lines and channels
+	// Check for group headers with visibility indicators, lines, and channels.
 	for _, digit := range []string{"1", "2", "0"} {
 		found := false
 		for _, line := range strings.Split(got, "\n") {
-			if strings.Contains(line, digit) && strings.Contains(line, "─") {
+			if strings.HasPrefix(line, "● ") && strings.Contains(line, " "+digit+" ") && strings.Contains(line, "─") {
 				found = true
 				break
 			}
@@ -165,6 +165,14 @@ func TestSidebarToggleAndJoinUpdates_E2E(t *testing.T) {
 			t.Fatalf("sidebar missing group header for %q in %q", digit, got)
 		}
 	}
+
+	u.state.SetVisible(state.GroupID(1), false)
+	u.refreshSidebar()
+	hidden := u.sidebarView.GetText(true)
+	if !strings.Contains(hidden, "\n○ 2 ") && !strings.HasPrefix(hidden, "○ 2 ") {
+		t.Fatalf("group 2 hidden indicator missing in %q", hidden)
+	}
+
 	if !strings.Contains(got, "  #a") || !strings.Contains(got, "  #k") {
 		t.Fatalf("sidebar missing channels in %q", got)
 	}
@@ -172,7 +180,7 @@ func TestSidebarToggleAndJoinUpdates_E2E(t *testing.T) {
 	lines := strings.Split(got, "\n")
 	foundGroup1 := false
 	for i, line := range lines {
-		if strings.Contains(line, "1") && strings.Contains(line, "─") {
+		if strings.HasPrefix(line, "● 1 ") && strings.Contains(line, "─") {
 			foundGroup1 = true
 			// Next two lines should be #a and #k
 			if i+2 < len(lines) && lines[i+1] == "  #a" && lines[i+2] == "  #k" {
