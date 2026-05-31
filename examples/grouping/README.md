@@ -15,9 +15,14 @@ Load order is lexical by filename. Lower numbers run first. Returning `nil` or
 
 ## Install
 
+Release binaries auto-install these starter scripts into
+`~/.euphrates/grouping.d` on first run (without overwriting existing files).
+
+To install manually from source:
+
 ```bash
-mkdir -p ~/.config/euphrates/grouping.d
-cp examples/grouping/*.lua ~/.config/euphrates/grouping.d/
+mkdir -p ~/.euphrates/grouping.d
+cp examples/grouping/*.lua ~/.euphrates/grouping.d/
 ```
 
 Then start Euphrates normally, or point at another strategy directory with:
