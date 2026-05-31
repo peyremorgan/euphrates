@@ -181,7 +181,7 @@ func (u *UI) OnPart(channel string) {
 }
 
 // OnNames replaces the known user roster for channel.
-func (u *UI) OnNames(channel string, nicks []string) {
+func (u *UI) OnNames(channel string, users map[string]string) {
 	// If we're in this channel, ensure our own nick is in the list.
 	// Some IRC servers or network issues might not include us in NAMES,
 	// but we know we're in the channel if we've joined it.
@@ -189,18 +189,18 @@ func (u *UI) OnNames(channel string, nicks []string) {
 		selfNick := u.sender.Nick()
 		if selfNick != "" {
 			hasSelf := false
-			for _, nick := range nicks {
+			for nick := range users {
 				if strings.EqualFold(nick, selfNick) {
 					hasSelf = true
 					break
 				}
 			}
 			if !hasSelf {
-				nicks = append(nicks, selfNick)
+				users[selfNick] = ""
 			}
 		}
 	}
-	u.state.SetChannelUsers(channel, nicks)
+	u.state.SetChannelUsers(channel, users)
 	u.app.QueueUpdateDraw(u.refreshUsersPanel)
 }
 
@@ -225,6 +225,12 @@ func (u *UI) OnUserQuit(nick string) {
 // OnUserNick renames nick across tracked channels.
 func (u *UI) OnUserNick(oldNick, newNick string) {
 	u.state.RenameUserInAllChannels(oldNick, newNick)
+	u.app.QueueUpdateDraw(u.refreshUsersPanel)
+}
+
+// OnUserMode applies a channel membership mode update for one nick.
+func (u *UI) OnUserMode(channel, nick string, mode rune, adding bool) {
+	u.state.ApplyUserMode(channel, nick, mode, adding)
 	u.app.QueueUpdateDraw(u.refreshUsersPanel)
 }
 
@@ -427,7 +433,12 @@ func (u *UI) refreshUsersPanel() {
 			b.WriteByte('\n')
 		}
 		if targetUsers[user.Key] {
-			b.WriteString("• ")
+			if prefix := u.state.UserHighestPrefix(u.state.Target(), user.Key); prefix != "" {
+				b.WriteString(prefix)
+				b.WriteByte(' ')
+			} else {
+				b.WriteString("• ")
+			}
 		} else {
 			b.WriteString("  ")
 		}

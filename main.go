@@ -135,6 +135,7 @@ func run() error {
 		OnUserPart:    u.OnUserPart,
 		OnUserQuit:    u.OnUserQuit,
 		OnUserNick:    u.OnUserNick,
+		OnUserMode:    u.OnUserMode,
 		OnNames:       u.OnNames,
 		OnChannelList: st.SetChannelListCache,
 	})

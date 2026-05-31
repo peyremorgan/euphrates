@@ -45,9 +45,11 @@ type Handlers struct {
 	OnUserPart func(channel, nick string)
 	OnUserQuit func(nick string)
 	OnUserNick func(oldNick, newNick string)
+	OnUserMode func(channel, nick string, mode rune, adding bool)
 
-	// OnNames updates the full user set for a channel from RPL_NAMREPLY.
-	OnNames func(channel string, nicks []string)
+	// OnNames updates the full user set for a channel from RPL_NAMREPLY,
+	// including membership prefixes keyed by nick.
+	OnNames func(channel string, users map[string]string)
 
 	// OnChannelList is fired when a LIST response has fully completed.
 	OnChannelList func(names []string)
@@ -116,9 +118,15 @@ func (h Handlers) emitUserNick(oldNick, newNick string) {
 	}
 }
 
-func (h Handlers) emitNames(channel string, nicks []string) {
+func (h Handlers) emitUserMode(channel, nick string, mode rune, adding bool) {
+	if h.OnUserMode != nil {
+		h.OnUserMode(channel, nick, mode, adding)
+	}
+}
+
+func (h Handlers) emitNames(channel string, users map[string]string) {
 	if h.OnNames != nil {
-		h.OnNames(channel, nicks)
+		h.OnNames(channel, users)
 	}
 }
 
@@ -232,25 +240,28 @@ func dispatchNamesReply(h Handlers, params []string) {
 	}
 
 	names := strings.Fields(raw)
-	nicks := make([]string, 0, len(names))
+	users := make(map[string]string, len(names))
 	for _, token := range names {
-		nick := stripNamesPrefix(token)
+		nick, prefixes := parseNamesEntry(token)
 		if nick == "" {
 			continue
 		}
-		nicks = append(nicks, nick)
+		users[nick] = prefixes
 	}
-	h.emitNames(channel, nicks)
+	h.emitNames(channel, users)
 }
 
-func stripNamesPrefix(token string) string {
+func parseNamesEntry(token string) (nick string, prefixes string) {
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return ""
+		return "", ""
 	}
+
+	var pfx strings.Builder
 	for len(token) > 0 {
 		switch token[0] {
 		case '~', '&', '@', '%', '+':
+			pfx.WriteByte(token[0])
 			token = token[1:]
 		default:
 			goto done
@@ -261,7 +272,7 @@ done:
 	if i := strings.IndexByte(token, '!'); i >= 0 {
 		token = token[:i]
 	}
-	return strings.TrimSpace(token)
+	return strings.TrimSpace(token), pfx.String()
 }
 
 // dispatchTopic handles a TOPIC command sent live during a session.
@@ -296,11 +307,81 @@ func dispatchMode(h Handlers, src, target string, params []string) {
 	if target == "" {
 		return
 	}
+	parseUserModeChanges(h, target, params)
 	by := nickFromSource(src)
 	if by == "" {
 		by = "server"
 	}
 	h.emitEventNow(fmt.Sprintf("± %s mode %s by %s", target, strings.Join(params, " "), by))
+}
+
+func parseUserModeChanges(h Handlers, target string, params []string) {
+	if !isChannelName(target) || len(params) == 0 {
+		return
+	}
+
+	modes := params[0]
+	args := params[1:]
+	adding := true
+	argIdx := 0
+
+	for _, mode := range modes {
+		switch mode {
+		case '+':
+			adding = true
+			continue
+		case '-':
+			adding = false
+			continue
+		}
+
+		needsArg := modeTakesArg(mode, adding)
+		if !needsArg {
+			continue
+		}
+		if argIdx >= len(args) {
+			break
+		}
+		nick := args[argIdx]
+		argIdx++
+		if isMembershipMode(mode) && nick != "" {
+			h.emitUserMode(target, nick, mode, adding)
+		}
+	}
+}
+
+func isChannelName(target string) bool {
+	if target == "" {
+		return false
+	}
+	switch target[0] {
+	case '#', '&', '+', '!':
+		return true
+	default:
+		return false
+	}
+}
+
+func modeTakesArg(mode rune, adding bool) bool {
+	// Common IRC channel modes with params; this keeps parsing aligned when
+	// user modes appear alongside list/key/limit changes.
+	switch mode {
+	case 'q', 'a', 'o', 'h', 'v', 'b', 'e', 'I':
+		return true
+	case 'k', 'l':
+		return adding
+	default:
+		return false
+	}
+}
+
+func isMembershipMode(mode rune) bool {
+	switch mode {
+	case 'q', 'a', 'o', 'h', 'v':
+		return true
+	default:
+		return false
+	}
 }
 
 // dispatchServerNumeric routes a server numeric reply (001, 372, 376, 433, …)

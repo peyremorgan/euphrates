@@ -48,6 +48,7 @@ type State struct {
 	listCache map[string]string // canonicalKey -> original name from LIST
 
 	channelUsers     map[string]map[string]struct{} // channelKey -> userKey set
+	channelUserModes map[string]map[string]string   // channelKey -> userKey -> normalized prefixes
 	userDisplay      map[string]string              // userKey -> display nick
 	userLastActivity map[string]time.Time           // userKey -> most recent activity
 
@@ -77,6 +78,7 @@ func New(cfg Config) *State {
 		channels:         make(map[string]*Channel),
 		listCache:        make(map[string]string),
 		channelUsers:     make(map[string]map[string]struct{}),
+		channelUserModes: make(map[string]map[string]string),
 		userDisplay:      make(map[string]string),
 		userLastActivity: make(map[string]time.Time),
 		visible:          make(map[GroupID]bool),
@@ -175,6 +177,7 @@ func (s *State) PartChannel(name string) {
 			s.pruneUserLocked(userKey)
 		}
 		delete(s.channelUsers, key)
+		delete(s.channelUserModes, key)
 		s.applyGroupingLocked(GroupingTriggerPart, key)
 	}
 }
@@ -330,8 +333,9 @@ func (s *State) addUserToChannelLocked(channel, nick string) {
 	s.userDisplay[userKey] = nick
 }
 
-// SetChannelUsers replaces the known user set for a normal channel.
-func (s *State) SetChannelUsers(channel string, nicks []string) {
+// SetChannelUsers replaces the known user/mode snapshot for a normal channel.
+// keys are nicks, values are membership prefixes from NAMES (for example "@").
+func (s *State) SetChannelUsers(channel string, users map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -341,24 +345,129 @@ func (s *State) SetChannelUsers(channel string, nicks []string) {
 		return
 	}
 
-	next := make(map[string]struct{}, len(nicks))
-	for _, nick := range nicks {
+	next := make(map[string]struct{}, len(users))
+	nextModes := make(map[string]string, len(users))
+	for nick, prefixes := range users {
 		nick = strings.TrimSpace(nick)
 		if nick == "" {
 			continue
 		}
 		userKey := canonicalKey(nick)
 		next[userKey] = struct{}{}
+		nextModes[userKey] = normalizeMembershipPrefixes(prefixes)
 		s.userDisplay[userKey] = nick
 	}
 
 	prev := s.channelUsers[channelKey]
 	s.channelUsers[channelKey] = next
+	s.channelUserModes[channelKey] = nextModes
 	for userKey := range prev {
 		if _, ok := next[userKey]; !ok {
 			s.pruneUserLocked(userKey)
 		}
 	}
+}
+
+// SetUserPrefixes stores full channel membership prefixes for one user.
+func (s *State) SetUserPrefixes(channel, nick, prefixes string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setUserPrefixesLocked(channel, nick, prefixes)
+}
+
+// ApplyUserMode applies a user membership mode mutation for one channel.
+// mode is one of q, a, o, h, v as used by IRC MODE.
+func (s *State) ApplyUserMode(channel, nick string, mode rune, adding bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	userKey := canonicalKey(strings.TrimSpace(nick))
+	if userKey == "" {
+		return
+	}
+	prefix, ok := modeToMembershipPrefix(mode)
+	if !ok {
+		return
+	}
+
+	channelKey := canonicalKey(channel)
+	if c, ok := s.channels[channelKey]; !ok || c.Kind != ChanNormal {
+		return
+	}
+	set := s.channelUsers[channelKey]
+	if _, ok := set[userKey]; !ok {
+		return
+	}
+
+	modes := s.channelUserModes[channelKey]
+	if modes == nil {
+		modes = make(map[string]string)
+		s.channelUserModes[channelKey] = modes
+	}
+	cur := modes[userKey]
+	if adding {
+		modes[userKey] = addMembershipPrefix(cur, prefix)
+		return
+	}
+	next := removeMembershipPrefix(cur, prefix)
+	if next == "" {
+		delete(modes, userKey)
+		if len(modes) == 0 {
+			delete(s.channelUserModes, channelKey)
+		}
+		return
+	}
+	modes[userKey] = next
+}
+
+// UserHighestPrefix returns the highest-precedence visible prefix for a user
+// in a given channel, or "" when they have no tracked membership mode.
+func (s *State) UserHighestPrefix(channel, nick string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	channelKey := canonicalKey(channel)
+	userKey := canonicalKey(strings.TrimSpace(nick))
+	if userKey == "" {
+		return ""
+	}
+	prefixes := s.channelUserModes[channelKey][userKey]
+	if prefixes == "" {
+		return ""
+	}
+	return string(rune(prefixes[0]))
+}
+
+func (s *State) setUserPrefixesLocked(channel, nick, prefixes string) {
+	nick = strings.TrimSpace(nick)
+	if nick == "" {
+		return
+	}
+	channelKey := canonicalKey(channel)
+	if c, ok := s.channels[channelKey]; !ok || c.Kind != ChanNormal {
+		return
+	}
+	userKey := canonicalKey(nick)
+	set := s.channelUsers[channelKey]
+	if _, ok := set[userKey]; !ok {
+		return
+	}
+	norm := normalizeMembershipPrefixes(prefixes)
+	modes := s.channelUserModes[channelKey]
+	if norm == "" {
+		if modes != nil {
+			delete(modes, userKey)
+			if len(modes) == 0 {
+				delete(s.channelUserModes, channelKey)
+			}
+		}
+		return
+	}
+	if modes == nil {
+		modes = make(map[string]string)
+		s.channelUserModes[channelKey] = modes
+	}
+	modes[userKey] = norm
 }
 
 // RemoveUserFromChannel removes nick from one channel membership set.
@@ -379,6 +488,12 @@ func (s *State) RemoveUserFromChannel(channel, nick string) {
 	if len(set) == 0 {
 		delete(s.channelUsers, channelKey)
 	}
+	if modes := s.channelUserModes[channelKey]; modes != nil {
+		delete(modes, userKey)
+		if len(modes) == 0 {
+			delete(s.channelUserModes, channelKey)
+		}
+	}
 	s.pruneUserLocked(userKey)
 }
 
@@ -395,6 +510,12 @@ func (s *State) RemoveUserFromAllChannels(nick string) {
 		delete(set, userKey)
 		if len(set) == 0 {
 			delete(s.channelUsers, channelKey)
+		}
+		if modes := s.channelUserModes[channelKey]; modes != nil {
+			delete(modes, userKey)
+			if len(modes) == 0 {
+				delete(s.channelUserModes, channelKey)
+			}
 		}
 	}
 	s.pruneUserLocked(userKey)
@@ -420,6 +541,16 @@ func (s *State) RenameUserInAllChannels(oldNick, newNick string) {
 		}
 		delete(set, oldKey)
 		set[newKey] = struct{}{}
+	}
+
+	for channelKey, modes := range s.channelUserModes {
+		prefixes, ok := modes[oldKey]
+		if !ok {
+			continue
+		}
+		delete(modes, oldKey)
+		modes[newKey] = normalizeMembershipPrefixes(modes[newKey] + prefixes)
+		s.channelUserModes[channelKey] = modes
 	}
 
 	oldTime, hadOld := s.userLastActivity[oldKey]
@@ -531,6 +662,79 @@ func (s *State) pruneUserLocked(userKey string) {
 	}
 	delete(s.userDisplay, userKey)
 	delete(s.userLastActivity, userKey)
+}
+
+func normalizeMembershipPrefixes(prefixes string) string {
+	if prefixes == "" {
+		return ""
+	}
+	seen := make(map[rune]bool, len(prefixes))
+	for _, r := range prefixes {
+		if isMembershipPrefix(r) {
+			seen[r] = true
+		}
+	}
+	if len(seen) == 0 {
+		return ""
+	}
+	ordered := []rune{'~', '&', '@', '%', '+'}
+	var b strings.Builder
+	for _, r := range ordered {
+		if seen[r] {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func isMembershipPrefix(r rune) bool {
+	switch r {
+	case '~', '&', '@', '%', '+':
+		return true
+	default:
+		return false
+	}
+}
+
+func modeToMembershipPrefix(mode rune) (rune, bool) {
+	switch mode {
+	case 'q':
+		return '~', true
+	case 'a':
+		return '&', true
+	case 'o':
+		return '@', true
+	case 'h':
+		return '%', true
+	case 'v':
+		return '+', true
+	default:
+		return 0, false
+	}
+}
+
+func addMembershipPrefix(prefixes string, prefix rune) string {
+	if !isMembershipPrefix(prefix) {
+		return normalizeMembershipPrefixes(prefixes)
+	}
+	return normalizeMembershipPrefixes(prefixes + string(prefix))
+}
+
+func removeMembershipPrefix(prefixes string, prefix rune) string {
+	if prefixes == "" {
+		return ""
+	}
+	if !isMembershipPrefix(prefix) {
+		return normalizeMembershipPrefixes(prefixes)
+	}
+	var b strings.Builder
+	for _, r := range prefixes {
+		if r == prefix {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return normalizeMembershipPrefixes(b.String())
 }
 
 // AddEvent appends a pre-formatted event line to the events ring.
