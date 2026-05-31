@@ -25,6 +25,8 @@ type Sender interface {
 	Quit(reason string)
 	// Join asks the server to join channel.
 	Join(channel string) error
+	// Part asks the server to leave channel with an optional reason.
+	Part(channel, reason string) error
 }
 
 // UI owns the tview widgets and routes events between state and Sender.
@@ -553,7 +555,8 @@ func (u *UI) onInputDone(key tcell.Key) {
 }
 
 // handleSubmit interprets a submitted line as a command (`/me ...`,
-// `/quit ...`) or a plain message to the current target. Pure-ish: relies on
+// `/join ...`, `/part ...`, `/quit ...`) or a plain message to the current
+// target. Pure-ish: relies on
 // state and Sender but no tview surface, so it's directly testable.
 func (u *UI) handleSubmit(text string) {
 	text = strings.TrimRight(text, " \t")
@@ -602,8 +605,73 @@ func (u *UI) handleCommand(line string) {
 		if err := u.sender.Join(rest); err != nil {
 			u.addEvent("join failed: " + err.Error())
 		}
+	case "/part":
+		target := ""
+		reason := ""
+
+		if rest == "" {
+			target = u.state.Target()
+		} else {
+			first, tail := splitFirstArg(rest)
+			if c, ok := u.state.Channel(first); ok {
+				target = c.Name
+				reason = tail
+			} else if strings.EqualFold(first, state.ServerChannelName) {
+				target = state.ServerChannelName
+				reason = tail
+			} else if isChannelName(first) {
+				target = first
+				reason = tail
+			} else {
+				target = u.state.Target()
+				reason = strings.TrimSpace(rest)
+			}
+		}
+
+		if target == "" {
+			u.addEvent("(no target — join a channel first)")
+			return
+		}
+		if c, ok := u.state.Channel(target); ok {
+			if c.Kind != state.ChanNormal {
+				u.addEvent("(cannot part from queries/server)")
+				return
+			}
+			target = c.Name
+		} else if !isChannelName(target) {
+			u.addEvent("(cannot part from queries/server)")
+			return
+		}
+
+		if err := u.sender.Part(target, reason); err != nil {
+			u.addEvent("part failed: " + err.Error())
+		}
 	default:
 		u.addEvent("(unknown command: " + cmd + ")")
+	}
+}
+
+func splitFirstArg(s string) (first, rest string) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", ""
+	}
+	i := strings.IndexAny(s, " \t")
+	if i < 0 {
+		return s, ""
+	}
+	return s[:i], strings.TrimLeft(s[i+1:], " \t")
+}
+
+func isChannelName(name string) bool {
+	if name == "" {
+		return false
+	}
+	switch name[0] {
+	case '#', '&', '+', '!':
+		return true
+	default:
+		return false
 	}
 }
 

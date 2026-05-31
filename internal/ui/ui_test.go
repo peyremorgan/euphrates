@@ -19,13 +19,16 @@ type fakeSender struct {
 	privmsgs []sentMsg
 	actions  []sentMsg
 	joins    []string
+	parts    []sentPart
 	quitWith string
 	quitN    int
 	sendErr  error
 	joinErr  error
+	partErr  error
 }
 
 type sentMsg struct{ Target, Text string }
+type sentPart struct{ Channel, Reason string }
 
 func (f *fakeSender) Nick() string { return f.nick }
 
@@ -63,6 +66,16 @@ func (f *fakeSender) Join(channel string) error {
 		return f.joinErr
 	}
 	f.joins = append(f.joins, channel)
+	return nil
+}
+
+func (f *fakeSender) Part(channel, reason string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.partErr != nil {
+		return f.partErr
+	}
+	f.parts = append(f.parts, sentPart{Channel: channel, Reason: reason})
 	return nil
 }
 
@@ -588,6 +601,97 @@ func TestHandleSubmit_JoinError(t *testing.T) {
 	ev := u.state.Events()
 	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "join failed") {
 		t.Fatalf("expected join-failed event, got %v", ev)
+	}
+}
+
+func TestHandleSubmit_PartActiveChannel(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.state.JoinChannel("#a")
+
+	u.handleSubmit("/part")
+
+	if len(fs.parts) != 1 || fs.parts[0] != (sentPart{Channel: "#a", Reason: ""}) {
+		t.Fatalf("parts=%v", fs.parts)
+	}
+}
+
+func TestHandleSubmit_PartActiveChannelWithReason(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.state.JoinChannel("#a")
+
+	u.handleSubmit("/part stepping away")
+
+	if len(fs.parts) != 1 || fs.parts[0] != (sentPart{Channel: "#a", Reason: "stepping away"}) {
+		t.Fatalf("parts=%v", fs.parts)
+	}
+}
+
+func TestHandleSubmit_PartExplicitChannelWithReason(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.state.JoinChannel("#a")
+	u.state.JoinChannel("#b")
+
+	u.handleSubmit("/part #b see ya")
+
+	if len(fs.parts) != 1 || fs.parts[0] != (sentPart{Channel: "#b", Reason: "see ya"}) {
+		t.Fatalf("parts=%v", fs.parts)
+	}
+}
+
+func TestHandleSubmit_PartNoTarget(t *testing.T) {
+	u, fs := newTestUI(t)
+
+	u.handleSubmit("/part")
+
+	if len(fs.parts) != 0 {
+		t.Fatalf("unexpected part calls: %v", fs.parts)
+	}
+	ev := u.state.Events()
+	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "no target") {
+		t.Fatalf("expected no-target event, got %v", ev)
+	}
+}
+
+func TestHandleSubmit_PartQueryTargetRejected(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.state.JoinChannel("alice")
+	u.state.SetTarget("alice")
+
+	u.handleSubmit("/part")
+
+	if len(fs.parts) != 0 {
+		t.Fatalf("unexpected part calls: %v", fs.parts)
+	}
+	ev := u.state.Events()
+	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "cannot part from queries/server") {
+		t.Fatalf("expected query/server error event, got %v", ev)
+	}
+}
+
+func TestHandleSubmit_PartServerTargetRejected(t *testing.T) {
+	u, fs := newTestUI(t)
+
+	u.handleSubmit("/part " + state.ServerChannelName)
+
+	if len(fs.parts) != 0 {
+		t.Fatalf("unexpected part calls: %v", fs.parts)
+	}
+	ev := u.state.Events()
+	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "cannot part from queries/server") {
+		t.Fatalf("expected query/server error event, got %v", ev)
+	}
+}
+
+func TestHandleSubmit_PartError(t *testing.T) {
+	u, fs := newTestUI(t)
+	fs.partErr = errors.New("not on channel")
+	u.state.JoinChannel("#a")
+
+	u.handleSubmit("/part")
+
+	ev := u.state.Events()
+	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "part failed") {
+		t.Fatalf("expected part-failed event, got %v", ev)
 	}
 }
 
