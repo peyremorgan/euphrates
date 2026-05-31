@@ -107,8 +107,8 @@ func TestBuildLayout_IncludesSeparatorBetweenMainAndEvents(t *testing.T) {
 	if got := u.contentRow.GetItemCount(); got != 3 {
 		t.Fatalf("content row item count=%d want 3", got)
 	}
-	if got := u.contentRow.GetItem(0); got != u.sidebarView {
-		t.Fatalf("content row item 0 is %T, want sidebar view", got)
+	if got := u.contentRow.GetItem(0); got != u.sidebarCol {
+		t.Fatalf("content row item 0 is %T, want sidebar column", got)
 	}
 	if got := u.contentRow.GetItem(1); got != u.sidebarDivider {
 		t.Fatalf("content row item 1 is %T, want sidebar divider", got)

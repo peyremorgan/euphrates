@@ -40,9 +40,11 @@ type UI struct {
 	statusView      *tview.TextView
 	statusCountView *tview.TextView
 	statusRow       *tview.Flex
-	sidebarView     *tview.TextView
-	sidebarDivider  *tview.TextView
-	contentRow      *tview.Flex
+	sidebarView      *tview.TextView
+	sidebarTitleView *tview.TextView
+	sidebarCol       *tview.Flex
+	sidebarDivider   *tview.TextView
+	contentRow       *tview.Flex
 	mainView        *tview.TextView
 	separatorView   *tview.TextView
 	eventsView      *tview.TextView
@@ -170,6 +172,22 @@ func (u *UI) buildLayout() {
 		SetScrollable(true).
 		SetWrap(false)
 	u.sidebarView.SetTextColor(tcell.GetColor(chrome.EventsForeground))
+
+	u.sidebarTitleView = tview.NewTextView().
+		SetDynamicColors(true).
+		SetWrap(false)
+	u.sidebarTitleView.SetBackgroundColor(tcell.GetColor(chrome.Separator))
+	u.sidebarTitleView.SetTextStyle(
+		tcell.StyleDefault.
+			Foreground(tcell.GetColor(chrome.StatusForeground)).
+			Background(tcell.GetColor(chrome.Separator)),
+	)
+	u.sidebarTitleView.SetText(" Groups ")
+
+	u.sidebarCol = tview.NewFlex().SetDirection(tview.FlexRow)
+	u.sidebarCol.AddItem(u.sidebarTitleView, 1, 0, false)
+	u.sidebarCol.AddItem(u.sidebarView, 0, 1, false)
+
 	u.sidebarDivider = tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(false)
@@ -179,7 +197,7 @@ func (u *UI) buildLayout() {
 		SetWrap(true).
 		SetWordWrap(true)
 	u.contentRow = tview.NewFlex().SetDirection(tview.FlexColumn)
-	u.contentRow.AddItem(u.sidebarView, 0, 0, false)
+	u.contentRow.AddItem(u.sidebarCol, 0, 0, false)
 	u.contentRow.AddItem(u.sidebarDivider, 0, 0, false)
 	u.contentRow.AddItem(u.mainView, 0, 1, false)
 	u.separatorView = tview.NewTextView().
@@ -443,11 +461,11 @@ func (u *UI) toggleSidebar() {
 	if u.sidebarVisible {
 		u.refreshSidebar()
 		u.refreshSidebarDivider()
-		u.contentRow.ResizeItem(u.sidebarView, sidebarWidth, 0)
+		u.contentRow.ResizeItem(u.sidebarCol, sidebarWidth, 0)
 		u.contentRow.ResizeItem(u.sidebarDivider, 1, 0)
 		return
 	}
-	u.contentRow.ResizeItem(u.sidebarView, 0, 0)
+	u.contentRow.ResizeItem(u.sidebarCol, 0, 0)
 	u.contentRow.ResizeItem(u.sidebarDivider, 0, 0)
 	u.sidebarDivider.SetText("")
 }
