@@ -101,6 +101,77 @@ func TestBuildLayout_IncludesSeparatorBetweenMainAndEvents(t *testing.T) {
 	if got := u.root.GetItem(3); got != u.eventsView {
 		t.Fatalf("item 3 is %T, want events view", got)
 	}
+	if got := u.root.GetItem(1); got != u.contentRow {
+		t.Fatalf("item 1 is %T, want content row", got)
+	}
+	if got := u.contentRow.GetItemCount(); got != 2 {
+		t.Fatalf("content row item count=%d want 2", got)
+	}
+	if got := u.contentRow.GetItem(0); got != u.sidebarView {
+		t.Fatalf("content row item 0 is %T, want sidebar view", got)
+	}
+	if got := u.contentRow.GetItem(1); got != u.mainView {
+		t.Fatalf("content row item 1 is %T, want main view", got)
+	}
+}
+
+func TestRefreshSidebar_ShowsAllGroupHeadersWhenEmpty(t *testing.T) {
+	u, _ := newTestUI(t)
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+	lines := strings.Split(got, "\n")
+	if len(lines) != state.NumGroups {
+		t.Fatalf("line count=%d want %d", len(lines), state.NumGroups)
+	}
+	for i := 0; i < state.NumGroups; i++ {
+		want := digitForGroup(i) + " -------------"
+		if lines[i] != want {
+			t.Fatalf("line %d=%q want %q", i, lines[i], want)
+		}
+	}
+}
+
+func TestRefreshSidebar_UsesInsertionOrderWithinGroup(t *testing.T) {
+	u, _ := newTestUI(t)
+	for _, ch := range []string{"#a", "#b", "#c", "#d", "#e", "#f", "#g", "#h", "#i", "#j", "#k"} {
+		u.state.JoinChannel(ch)
+	}
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+	want := strings.Join([]string{
+		"1 -------------",
+		"  #a",
+		"  #k",
+	}, "\n")
+	if !strings.Contains(got, want) {
+		t.Fatalf("group 1 block missing expected insertion order:\n%s", got)
+	}
+}
+
+func TestToggleSidebar_ResizesContentRow(t *testing.T) {
+	u, _ := newTestUI(t)
+
+	drawUIRoot(t, u, 100, 20)
+	_, _, hiddenW, _ := u.sidebarView.GetRect()
+	if hiddenW != 0 {
+		t.Fatalf("hidden sidebar width=%d want 0", hiddenW)
+	}
+
+	u.toggleSidebar()
+	drawUIRoot(t, u, 100, 20)
+	_, _, shownW, _ := u.sidebarView.GetRect()
+	if shownW != sidebarWidth {
+		t.Fatalf("shown sidebar width=%d want %d", shownW, sidebarWidth)
+	}
+
+	u.toggleSidebar()
+	drawUIRoot(t, u, 100, 20)
+	_, _, hiddenAgainW, _ := u.sidebarView.GetRect()
+	if hiddenAgainW != 0 {
+		t.Fatalf("hidden-again sidebar width=%d want 0", hiddenAgainW)
+	}
 }
 
 func TestRefreshSeparator_UsesSeparatorWidth(t *testing.T) {
@@ -564,6 +635,26 @@ func TestHandleKey_AltDigitTogglesGroup(t *testing.T) {
 	}
 	if u.state.IsVisible(state.GroupID(0)) {
 		t.Error("group 0 still visible after Alt+1")
+	}
+}
+
+func TestHandleKey_AltGTogglesSidebar(t *testing.T) {
+	u, _ := newTestUI(t)
+
+	ev := tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModAlt)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("Alt+g not consumed")
+	}
+	if !u.sidebarVisible {
+		t.Fatal("sidebar not visible after Alt+g")
+	}
+
+	evShift := tcell.NewEventKey(tcell.KeyRune, 'G', tcell.ModAlt)
+	if got := u.handleKey(evShift); got != nil {
+		t.Fatal("Alt+G not consumed")
+	}
+	if u.sidebarVisible {
+		t.Fatal("sidebar still visible after second Alt+G")
 	}
 }
 

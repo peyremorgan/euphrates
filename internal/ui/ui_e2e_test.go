@@ -125,3 +125,39 @@ func TestJoinAndPartHooks_ApplyRegroupingStrategy_E2E(t *testing.T) {
 		t.Fatalf("expected no visible lines after hiding regrouped channel, got %d", len(lines))
 	}
 }
+
+func TestSidebarToggleAndJoinUpdates_E2E(t *testing.T) {
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20})
+	fs := &fakeSender{nick: "me"}
+	u := New(s, fs)
+
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModAlt)); got != nil {
+		t.Fatalf("Alt+g not consumed")
+	}
+	if !u.sidebarVisible {
+		t.Fatal("sidebar should be visible")
+	}
+
+	u.state.JoinChannel("#a")
+	u.state.JoinChannel("#b")
+	u.state.JoinChannel("#c")
+	u.state.JoinChannel("#d")
+	u.state.JoinChannel("#e")
+	u.state.JoinChannel("#f")
+	u.state.JoinChannel("#g")
+	u.state.JoinChannel("#h")
+	u.state.JoinChannel("#i")
+	u.state.JoinChannel("#j")
+	u.state.JoinChannel("#k")
+	u.refreshSidebar()
+
+	got := u.sidebarView.GetText(true)
+	for _, want := range []string{"1 -------------", "2 -------------", "0 -------------", "  #a", "  #k"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("sidebar missing %q in %q", want, got)
+		}
+	}
+	if !strings.Contains(got, "1 -------------\n  #a\n  #k") {
+		t.Fatalf("group 1 ordering wrong:\n%s", got)
+	}
+}
