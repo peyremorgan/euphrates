@@ -39,8 +39,9 @@ type UI struct {
 
 	manualScroll bool
 
-	joinCompletion joinCompletionState
-	partCompletion partCompletionState
+	commandCompletion commandCompletionState
+	joinCompletion    joinCompletionState
+	partCompletion    partCompletionState
 
 	statusView       *tview.TextView
 	statusCountView  *tview.TextView
@@ -73,6 +74,19 @@ type joinCompletionState struct {
 type partCompletionState struct {
 	expandedInput string
 	matches       []string
+}
+
+type commandCompletionState struct {
+	expandedInput string
+	matches       []string
+}
+
+var knownCommands = []string{
+	"/help",
+	"/join",
+	"/me",
+	"/part",
+	"/quit",
 }
 
 const dottedSeparatorRune = "┄"
@@ -623,6 +637,9 @@ func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		u.Stop()
 		return nil
 	case tcell.KeyTab:
+		if u.tryCommandCompletion() {
+			return nil
+		}
 		if u.tryJoinCompletion() {
 			return nil
 		}
@@ -740,7 +757,7 @@ func (u *UI) onInputDone(key tcell.Key) {
 	}
 }
 
-// handleSubmit interprets a submitted line as a command (`/me ...`,
+// handleSubmit interprets a submitted line as a command (`/help`, `/me ...`,
 // `/join ...`, `/part ...`, `/quit ...`) or a plain message to the current
 // target. Pure-ish: relies on
 // state and Sender but no tview surface, so it's directly testable.
@@ -769,6 +786,9 @@ func (u *UI) handleCommand(line string) {
 		rest = parts[1]
 	}
 	switch cmd {
+	case "/help":
+		u.addEvent("commands: /help /join /me /part /quit")
+		u.addEvent("usage: /join <channel> | /part [channel] [reason] | /me <action> | /quit [reason]")
 	case "/me":
 		target := u.state.Target()
 		if target == "" || rest == "" {
@@ -931,6 +951,46 @@ func (u *UI) tryPartCompletion() bool {
 		u.input.SetText(expanded)
 		u.partCompletion = partCompletionState{
 			expandedInput: expanded,
+			matches:       append([]string(nil), matches...),
+		}
+		return true
+	}
+
+	u.showCompletionList(matches)
+	return true
+}
+
+func (u *UI) tryCommandCompletion() bool {
+	text := u.input.GetText()
+	if !strings.HasPrefix(text, "/") || strings.ContainsAny(text, " \t") {
+		u.commandCompletion = commandCompletionState{}
+		return false
+	}
+	if text == u.commandCompletion.expandedInput && len(u.commandCompletion.matches) > 1 {
+		u.showCompletionList(u.commandCompletion.matches)
+		return true
+	}
+	u.commandCompletion = commandCompletionState{}
+
+	matches := make([]string, 0, len(knownCommands))
+	for _, cmd := range knownCommands {
+		if strings.HasPrefix(strings.ToLower(cmd), strings.ToLower(text)) {
+			matches = append(matches, cmd)
+		}
+	}
+	if len(matches) == 0 {
+		return true
+	}
+	if len(matches) == 1 {
+		u.input.SetText(matches[0] + " ")
+		return true
+	}
+
+	lcp := longestCommonPrefix(matches)
+	if lcp != "" && !strings.EqualFold(lcp, text) {
+		u.input.SetText(lcp)
+		u.commandCompletion = commandCompletionState{
+			expandedInput: lcp,
 			matches:       append([]string(nil), matches...),
 		}
 		return true

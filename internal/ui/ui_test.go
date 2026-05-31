@@ -669,6 +669,23 @@ func TestHandleSubmit_UnknownCommand(t *testing.T) {
 	}
 }
 
+func TestHandleSubmit_Help(t *testing.T) {
+	u, _ := newTestUI(t)
+
+	u.handleSubmit("/help")
+
+	ev := u.state.Events()
+	if len(ev) < 2 {
+		t.Fatalf("expected help output events, got %v", ev)
+	}
+	if !strings.Contains(ev[len(ev)-2], "/help") || !strings.Contains(ev[len(ev)-2], "/join") {
+		t.Fatalf("expected command list in help output, got %q", ev[len(ev)-2])
+	}
+	if !strings.Contains(ev[len(ev)-1], "usage:") || !strings.Contains(ev[len(ev)-1], "/quit") {
+		t.Fatalf("expected usage help line, got %q", ev[len(ev)-1])
+	}
+}
+
 func TestHandleSubmit_Join(t *testing.T) {
 	u, fs := newTestUI(t)
 	u.handleSubmit("/join #go")
@@ -1046,6 +1063,88 @@ func TestTryPartCompletion_DoubleTabUsesSavedCandidatesIfChannelsChange(t *testi
 	}
 }
 
+func TestTryCommandCompletion_SingleMatch(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.input.SetText("/j")
+
+	if !u.tryCommandCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/join " {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestTryCommandCompletion_IncludesHelp(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.input.SetText("/h")
+
+	if !u.tryCommandCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/help " {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestTryCommandCompletion_AmbiguousShowsCompletions(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.eventsView.SetRect(0, 0, 80, 5)
+	u.input.SetText("/")
+	before := len(u.state.Events())
+
+	if !u.tryCommandCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected completions in events, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	for _, want := range knownCommands {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in suggestions: %v", want, after[before:])
+		}
+	}
+}
+
+func TestTryCommandCompletion_DoubleTabOnAmbiguousInputShowsSuggestions(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.eventsView.SetRect(0, 0, 80, 5)
+	u.input.SetText("/")
+
+	if !u.tryCommandCompletion() {
+		t.Fatal("first completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/" {
+		t.Fatalf("input=%q", got)
+	}
+
+	before := len(u.state.Events())
+	if !u.tryCommandCompletion() {
+		t.Fatal("second completion not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected suggestions after second tab, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	for _, want := range knownCommands {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in suggestions: %v", want, after[before:])
+		}
+	}
+}
+
+func TestTryCommandCompletion_IgnoresWithSpace(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.input.SetText("/join ")
+
+	if u.tryCommandCompletion() {
+		t.Fatal("command completion unexpectedly consumed argument phase")
+	}
+}
+
 func TestHandleKey_TabCompletesJoin(t *testing.T) {
 	u, _ := newTestUI(t)
 	u.state.SetChannelListCache([]string{"#golang"})
@@ -1068,6 +1167,18 @@ func TestHandleKey_TabCompletesPart(t *testing.T) {
 		t.Fatal("tab not consumed")
 	}
 	if got := u.input.GetText(); got != "/part #golang" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestHandleKey_TabCompletesCommand(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.input.SetText("/h")
+	ev := tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("tab not consumed")
+	}
+	if got := u.input.GetText(); got != "/help " {
 		t.Fatalf("input=%q", got)
 	}
 }
