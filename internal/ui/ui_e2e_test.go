@@ -38,8 +38,8 @@ func TestJoinCompletionFlow_E2E(t *testing.T) {
 	if got := u.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)); got != nil {
 		t.Fatalf("tab not consumed at partial")
 	}
-	if got := u.input.GetText(); got != "/join #golang" {
-		t.Fatalf("input=%q want /join #golang", got)
+	if got := u.input.GetText(); got != "/join #golang " {
+		t.Fatalf("input=%q want /join #golang ", got)
 	}
 
 	// Submit /join command end-to-end through input handler.
@@ -145,7 +145,7 @@ func TestCommandCompletionAndHelp_E2E(t *testing.T) {
 		t.Fatalf("expected command completion suggestions, before=%d after=%d", before, len(after))
 	}
 	joined := strings.Join(after[before:], " ")
-	for _, want := range []string{"/help", "/join", "/me", "/part", "/quit"} {
+	for _, want := range []string{"/help", "/join", "/list", "/me", "/part", "/quit"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in events: %v", want, after[before:])
 		}
@@ -162,6 +162,42 @@ func TestCommandCompletionAndHelp_E2E(t *testing.T) {
 		if !strings.Contains(joinedEvents, want) {
 			t.Fatalf("missing %q in help output: %v", want, ev)
 		}
+	}
+}
+
+func TestChannelBrowser_OpenFilterJoin_E2E(t *testing.T) {
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20})
+	fs := &fakeSender{nick: "me"}
+	u := New(s, fs)
+
+	u.state.SetChannelListCache([]string{"#archive", "#beta", "#gamma"})
+	u.state.JoinChannel("#beta")
+
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyRune, 'l', tcell.ModAlt)); got != nil {
+		t.Fatalf("Alt+L not consumed")
+	}
+	if !u.browserVisible {
+		t.Fatal("browser should be visible")
+	}
+
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone)); got != nil {
+		t.Fatalf("typed filter not consumed")
+	}
+	if got := u.browser.searchQuery; got != "a" {
+		t.Fatalf("query=%q want a", got)
+	}
+	if got := u.browser.selectedChannel(); got != "#archive" {
+		t.Fatalf("selected=%q want #archive", got)
+	}
+
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyRune, 'j', tcell.ModAlt)); got != nil {
+		t.Fatalf("Alt+J not consumed")
+	}
+	if len(fs.joins) != 1 || fs.joins[0] != "#archive" {
+		t.Fatalf("joins=%v", fs.joins)
+	}
+	if u.browserVisible {
+		t.Fatal("browser should close after Alt+J")
 	}
 }
 

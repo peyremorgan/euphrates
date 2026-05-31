@@ -214,6 +214,32 @@ func (s *State) SetChannelListCache(names []string) {
 	}
 }
 
+// ListCachedChannels returns all LIST-cached channels sorted
+// case-insensitively and preserving original casing.
+func (s *State) ListCachedChannels() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]string, 0, len(s.listCache))
+	for _, name := range s.listCache {
+		out = append(out, name)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return canonicalKey(out[i]) < canonicalKey(out[j])
+	})
+	return out
+}
+
+// IsJoinedNormalChannel reports whether name is currently joined as a normal
+// channel. Matching is case-insensitive.
+func (s *State) IsJoinedNormalChannel(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	c, ok := s.channels[canonicalKey(name)]
+	return ok && c.Kind == ChanNormal
+}
+
 // MatchJoinableChannels returns cached LIST channels matching prefix,
 // excluding channels we already joined. Matching is case-insensitive.
 func (s *State) MatchJoinableChannels(prefix string) []string {

@@ -686,6 +686,20 @@ func TestHandleSubmit_Help(t *testing.T) {
 	}
 }
 
+func TestHandleSubmit_ListOpensBrowser(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.SetChannelListCache([]string{"#alpha"})
+
+	u.handleSubmit("/list")
+
+	if !u.browserVisible {
+		t.Fatal("browser should be visible after /list")
+	}
+	if got := u.browser.selectedChannel(); got != "#alpha" {
+		t.Fatalf("selected=%q want #alpha", got)
+	}
+}
+
 func TestHandleSubmit_Join(t *testing.T) {
 	u, fs := newTestUI(t)
 	u.handleSubmit("/join #go")
@@ -825,7 +839,7 @@ func TestTryJoinCompletion_SingleMatch(t *testing.T) {
 	if !u.tryJoinCompletion() {
 		t.Fatal("completion not consumed")
 	}
-	if got := u.input.GetText(); got != "/join #golang" {
+	if got := u.input.GetText(); got != "/join #golang " {
 		t.Fatalf("input=%q", got)
 	}
 }
@@ -938,7 +952,7 @@ func TestTryJoinCompletion_ExcludesAlreadyJoinedChannels(t *testing.T) {
 	if !u.tryJoinCompletion() {
 		t.Fatal("completion not consumed")
 	}
-	if got := u.input.GetText(); got != "/join #golang" {
+	if got := u.input.GetText(); got != "/join #golang " {
 		t.Fatalf("expected joined channel exclusion, got %q", got)
 	}
 }
@@ -952,7 +966,7 @@ func TestTryPartCompletion_SingleMatch(t *testing.T) {
 	if !u.tryPartCompletion() {
 		t.Fatal("completion not consumed")
 	}
-	if got := u.input.GetText(); got != "/part #golang" {
+	if got := u.input.GetText(); got != "/part #golang " {
 		t.Fatalf("input=%q", got)
 	}
 }
@@ -1153,7 +1167,7 @@ func TestHandleKey_TabCompletesJoin(t *testing.T) {
 	if got := u.handleKey(ev); got != nil {
 		t.Fatal("tab not consumed")
 	}
-	if got := u.input.GetText(); got != "/join #golang" {
+	if got := u.input.GetText(); got != "/join #golang " {
 		t.Fatalf("input=%q", got)
 	}
 }
@@ -1166,7 +1180,7 @@ func TestHandleKey_TabCompletesPart(t *testing.T) {
 	if got := u.handleKey(ev); got != nil {
 		t.Fatal("tab not consumed")
 	}
-	if got := u.input.GetText(); got != "/part #golang" {
+	if got := u.input.GetText(); got != "/part #golang " {
 		t.Fatalf("input=%q", got)
 	}
 }
@@ -1191,7 +1205,7 @@ func TestHandleKey_TabFallsBackToPartAfterJoinMiss(t *testing.T) {
 	if got := u.handleKey(ev); got != nil {
 		t.Fatal("tab not consumed")
 	}
-	if got := u.input.GetText(); got != "/part #go" {
+	if got := u.input.GetText(); got != "/part #go " {
 		t.Fatalf("input=%q", got)
 	}
 }
@@ -1258,6 +1272,77 @@ func TestHandleKey_AltUTogglesUsersPanel(t *testing.T) {
 	}
 	if u.usersVisible {
 		t.Fatal("users panel still visible after second Alt+U")
+	}
+}
+
+func TestHandleKey_AltLTogglesBrowser(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.SetChannelListCache([]string{"#alpha"})
+
+	ev := tcell.NewEventKey(tcell.KeyRune, 'l', tcell.ModAlt)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("Alt+l not consumed")
+	}
+	if !u.browserVisible {
+		t.Fatal("browser not visible after Alt+l")
+	}
+
+	evShift := tcell.NewEventKey(tcell.KeyRune, 'L', tcell.ModAlt)
+	if got := u.handleKey(evShift); got != nil {
+		t.Fatal("Alt+L not consumed")
+	}
+	if u.browserVisible {
+		t.Fatal("browser still visible after second Alt+L")
+	}
+}
+
+func TestHandleKey_BrowserEscCloses(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.openBrowser()
+
+	ev := tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("Esc not consumed while browser open")
+	}
+	if u.browserVisible {
+		t.Fatal("browser still visible after Esc")
+	}
+}
+
+func TestHandleKey_BrowserTypingUpdatesFilterAndResetsSelection(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.SetChannelListCache([]string{"#archive", "#beta", "#gamma"})
+	u.openBrowser()
+	u.browser.listView.SetCurrentItem(2)
+
+	ev := tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("typed rune not consumed while browser open")
+	}
+	if got := u.browser.listView.GetCurrentItem(); got != 0 {
+		t.Fatalf("selection=%d want 0", got)
+	}
+	if got := u.browser.searchQuery; got != "a" {
+		t.Fatalf("query=%q want a", got)
+	}
+}
+
+func TestHandleKey_BrowserAltJJoinsSelectedChannel(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.state.SetChannelListCache([]string{"#alpha", "#beta"})
+	u.state.JoinChannel("#beta")
+	u.openBrowser()
+	u.browser.listView.SetCurrentItem(1)
+
+	ev := tcell.NewEventKey(tcell.KeyRune, 'j', tcell.ModAlt)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("Alt+j not consumed while browser open")
+	}
+	if len(fs.joins) != 1 || fs.joins[0] != "#beta" {
+		t.Fatalf("joins=%v", fs.joins)
+	}
+	if u.browserVisible {
+		t.Fatal("browser should close after join")
 	}
 }
 
