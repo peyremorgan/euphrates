@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -47,6 +49,10 @@ type UI struct {
 	sidebarTitleView *tview.TextView
 	sidebarCol       *tview.Flex
 	sidebarDivider   *tview.TextView
+	usersView        *tview.TextView
+	usersTitleView   *tview.TextView
+	usersCol         *tview.Flex
+	usersDivider     *tview.TextView
 	contentRow       *tview.Flex
 	mainView         *tview.TextView
 	separatorView    *tview.TextView
@@ -56,6 +62,7 @@ type UI struct {
 	inputRow         *tview.Flex
 	root             *tview.Flex
 	sidebarVisible   bool
+	usersVisible     bool
 }
 
 type joinCompletionState struct {
@@ -72,6 +79,7 @@ const dottedSeparatorRune = "┄"
 const sidebarDividerRune = "│"
 const maxEventsViewRows = 5
 const sidebarWidth = 30
+const usersPanelWidth = 30
 
 // New builds a UI bound to the given state and Sender.
 func New(s *state.State, sender Sender) *UI {
@@ -83,6 +91,7 @@ func New(s *state.State, sender Sender) *UI {
 	u.buildLayout()
 	u.app.SetBeforeDrawFunc(func(tcell.Screen) bool {
 		u.refreshSidebarDivider()
+		u.refreshUsersDivider()
 		u.refreshSeparator()
 		return false
 	})
@@ -106,6 +115,7 @@ func (u *UI) Stop() { u.app.Stop() }
 func (u *UI) OnMessage(msg state.Message) {
 	line, visible := u.state.AppendMessage(msg)
 	u.app.QueueUpdateDraw(func() {
+		u.refreshUsersPanel()
 		if visible {
 			_, _ = fmt.Fprintln(u.mainView, line)
 			if !u.manualScroll {
@@ -119,7 +129,10 @@ func (u *UI) OnMessage(msg state.Message) {
 // Safe to call from any goroutine.
 func (u *UI) OnEvent(line string) {
 	u.state.AddEvent(line)
-	u.app.QueueUpdateDraw(u.refreshEvents)
+	u.app.QueueUpdateDraw(func() {
+		u.refreshEvents()
+		u.refreshUsersPanel()
+	})
 }
 
 // addEvent is the synchronous counterpart to OnEvent, intended for callers
@@ -137,6 +150,7 @@ func (u *UI) OnJoin(channel string) {
 	u.app.QueueUpdateDraw(func() {
 		u.refreshStatus()
 		u.refreshSidebar()
+		u.refreshUsersPanel()
 		u.refreshPrompt()
 	})
 }
@@ -146,6 +160,36 @@ func (u *UI) OnJoin(channel string) {
 func (u *UI) OnPart(channel string) {
 	u.state.PartChannel(channel)
 	u.app.QueueUpdateDraw(u.refreshAfterStructuralChange)
+}
+
+// OnNames replaces the known user roster for channel.
+func (u *UI) OnNames(channel string, nicks []string) {
+	u.state.SetChannelUsers(channel, nicks)
+	u.app.QueueUpdateDraw(u.refreshUsersPanel)
+}
+
+// OnUserJoin marks nick present in channel.
+func (u *UI) OnUserJoin(channel, nick string) {
+	u.state.AddUserToChannel(channel, nick)
+	u.app.QueueUpdateDraw(u.refreshUsersPanel)
+}
+
+// OnUserPart removes nick from one channel.
+func (u *UI) OnUserPart(channel, nick string) {
+	u.state.RemoveUserFromChannel(channel, nick)
+	u.app.QueueUpdateDraw(u.refreshUsersPanel)
+}
+
+// OnUserQuit removes nick from all channels.
+func (u *UI) OnUserQuit(nick string) {
+	u.state.RemoveUserFromAllChannels(nick)
+	u.app.QueueUpdateDraw(u.refreshUsersPanel)
+}
+
+// OnUserNick renames nick across tracked channels.
+func (u *UI) OnUserNick(oldNick, newNick string) {
+	u.state.RenameUserInAllChannels(oldNick, newNick)
+	u.app.QueueUpdateDraw(u.refreshUsersPanel)
 }
 
 // --- layout & refresh -------------------------------------------------------
@@ -199,6 +243,27 @@ func (u *UI) buildLayout() {
 	u.sidebarDivider = tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(false)
+	u.usersDivider = tview.NewTextView().
+		SetDynamicColors(true).
+		SetWrap(false)
+	u.usersView = tview.NewTextView().
+		SetDynamicColors(true).
+		SetScrollable(true).
+		SetWrap(false)
+	u.usersView.SetTextColor(tcell.GetColor(chrome.EventsForeground))
+	u.usersTitleView = tview.NewTextView().
+		SetDynamicColors(true).
+		SetWrap(false)
+	u.usersTitleView.SetBackgroundColor(tcell.GetColor(chrome.Separator))
+	u.usersTitleView.SetTextStyle(
+		tcell.StyleDefault.
+			Foreground(tcell.GetColor(chrome.StatusForeground)).
+			Background(tcell.GetColor(chrome.Separator)),
+	)
+	u.usersTitleView.SetText(" Users ")
+	u.usersCol = tview.NewFlex().SetDirection(tview.FlexRow)
+	u.usersCol.AddItem(u.usersTitleView, 1, 0, false)
+	u.usersCol.AddItem(u.usersView, 0, 1, false)
 	u.mainView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetScrollable(true).
@@ -208,6 +273,8 @@ func (u *UI) buildLayout() {
 	u.contentRow.AddItem(u.sidebarCol, 0, 0, false)
 	u.contentRow.AddItem(u.sidebarDivider, 0, 0, false)
 	u.contentRow.AddItem(u.mainView, 0, 1, false)
+	u.contentRow.AddItem(u.usersDivider, 0, 0, false)
+	u.contentRow.AddItem(u.usersCol, 0, 0, false)
 	u.separatorView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(false)
@@ -240,8 +307,10 @@ func (u *UI) buildLayout() {
 func (u *UI) RefreshAll() {
 	u.refreshStatus()
 	u.refreshSidebar()
+	u.refreshUsersPanel()
 	u.refreshMain()
 	u.refreshSidebarDivider()
+	u.refreshUsersDivider()
 	u.refreshSeparator()
 	u.refreshEvents()
 	u.refreshPrompt()
@@ -306,6 +375,66 @@ func (u *UI) refreshSidebar() {
 	u.sidebarView.SetText(b.String())
 }
 
+func (u *UI) refreshUsersPanel() {
+	users := u.state.UsersSortedByActivity()
+	targetUsers := u.state.UsersInChannel(u.state.Target())
+	u.usersTitleView.SetText(" Users — " + formatDecimalSI(len(users)) + " ")
+
+	var b strings.Builder
+	for i, user := range users {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		if targetUsers[user.Key] {
+			b.WriteString("• ")
+		} else {
+			b.WriteString("  ")
+		}
+		b.WriteString(state.UserColor(user.Nick))
+		b.WriteString(state.Escape(user.Nick))
+		b.WriteString(state.ResetColor())
+	}
+	u.usersView.SetText(b.String())
+}
+
+func formatDecimalSI(n int) string {
+	if n < 1000 {
+		return strconv.Itoa(n)
+	}
+	units := []string{"k", "M", "G", "T", "P", "E"}
+	value := float64(n)
+	unit := 0
+	for value >= 1000 && unit < len(units)-1 {
+		value /= 1000
+		unit++
+	}
+	idx := unit - 1
+	if idx < 0 {
+		idx = 0
+	}
+
+	if value >= 10 {
+		rounded := math.Round(value)
+		if rounded >= 1000 && idx < len(units)-1 {
+			rounded = 1
+			idx++
+		}
+		return fmt.Sprintf("%.0f%s", rounded, units[idx])
+	}
+
+	rounded := math.Round(value*10) / 10
+	if rounded >= 1000 && idx < len(units)-1 {
+		rounded = 1
+		idx++
+	}
+	if rounded >= 10 {
+		return fmt.Sprintf("%.0f%s", rounded, units[idx])
+	}
+	txt := fmt.Sprintf("%.1f", rounded)
+	txt = strings.TrimSuffix(txt, ".0")
+	return txt + units[idx]
+}
+
 func formatGroupHeader(groupIndex int, visible bool) string {
 	digit := digitForGroup(groupIndex)
 	// Create a left-aligned header like: ● 1 ─────────────────────────
@@ -367,6 +496,33 @@ func (u *UI) refreshSidebarDivider() {
 	u.sidebarDivider.SetText("[" + sepColor + "]" + b.String() + state.ResetColor())
 }
 
+func (u *UI) refreshUsersDivider() {
+	if u.usersDivider == nil || !u.usersVisible {
+		if u.usersDivider != nil {
+			u.usersDivider.SetText("")
+		}
+		return
+	}
+	_, _, _, height := u.usersDivider.GetRect()
+	if height <= 0 {
+		_, _, _, height = u.contentRow.GetRect()
+	}
+	if height <= 0 {
+		u.usersDivider.SetText("")
+		return
+	}
+
+	var b strings.Builder
+	for i := 0; i < height; i++ {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(sidebarDividerRune)
+	}
+	sepColor := state.ActiveChromeTheme().Separator
+	u.usersDivider.SetText("[" + sepColor + "]" + b.String() + state.ResetColor())
+}
+
 func (u *UI) refreshSeparator() {
 	if u.separatorView == nil {
 		return
@@ -402,6 +558,7 @@ func (u *UI) refreshPrompt() {
 func (u *UI) refreshAfterStructuralChange() {
 	u.refreshStatus()
 	u.refreshSidebar()
+	u.refreshUsersPanel()
 	u.refreshMain()
 	u.refreshPrompt()
 }
@@ -419,6 +576,10 @@ func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 	if ev.Modifiers()&tcell.ModAlt != 0 {
 		if unicode.ToLower(ev.Rune()) == 'g' {
 			u.toggleSidebar()
+			return nil
+		}
+		if unicode.ToLower(ev.Rune()) == 'u' {
+			u.toggleUsersPanel()
 			return nil
 		}
 		if g, ok := groupForRune(ev.Rune()); ok {
@@ -447,12 +608,14 @@ func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		u.state.NextChannel()
 		u.refreshStatus()
 		u.refreshSidebar()
+		u.refreshUsersPanel()
 		u.refreshPrompt()
 		return nil
 	case tcell.KeyCtrlP:
 		u.state.PrevChannel()
 		u.refreshStatus()
 		u.refreshSidebar()
+		u.refreshUsersPanel()
 		u.refreshPrompt()
 		return nil
 	case tcell.KeyCtrlC:
@@ -509,6 +672,20 @@ func (u *UI) toggleSidebar() {
 	u.contentRow.ResizeItem(u.sidebarCol, 0, 0)
 	u.contentRow.ResizeItem(u.sidebarDivider, 0, 0)
 	u.sidebarDivider.SetText("")
+}
+
+func (u *UI) toggleUsersPanel() {
+	u.usersVisible = !u.usersVisible
+	if u.usersVisible {
+		u.refreshUsersPanel()
+		u.refreshUsersDivider()
+		u.contentRow.ResizeItem(u.usersDivider, 1, 0)
+		u.contentRow.ResizeItem(u.usersCol, usersPanelWidth, 0)
+		return
+	}
+	u.contentRow.ResizeItem(u.usersDivider, 0, 0)
+	u.contentRow.ResizeItem(u.usersCol, 0, 0)
+	u.usersDivider.SetText("")
 }
 
 func (u *UI) soloGroup(g state.GroupID) {

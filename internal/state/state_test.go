@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func newTestState() *State {
@@ -473,6 +474,97 @@ func TestServerNotTargetedOnFirstJoin(t *testing.T) {
 	s.EnsureChannel("#a")
 	if s.Target() != "#a" {
 		t.Errorf("target after #a=%q", s.Target())
+	}
+}
+
+func TestUsersSortedByActivity_DeduplicatedAndSorted(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#a")
+	s.JoinChannel("#b")
+
+	t0 := time.Now().Add(-2 * time.Minute)
+	t1 := time.Now().Add(-1 * time.Minute)
+
+	s.SetChannelUsers("#a", []string{"bob", "alice", "zoe"})
+	s.SetChannelUsers("#b", []string{"alice", "carol"})
+	s.UpdateUserActivity("#a", "alice", t1)
+	s.UpdateUserActivity("#b", "bob", t0)
+
+	got := s.UsersSortedByActivity()
+	if len(got) != 4 {
+		t.Fatalf("len(users)=%d want 4", len(got))
+	}
+
+	if got[0].Nick != "alice" || !got[0].LastActivity.Equal(t1) {
+		t.Fatalf("first user=%+v want alice at t1", got[0])
+	}
+	if got[1].Nick != "bob" || !got[1].LastActivity.Equal(t0) {
+		t.Fatalf("second user=%+v want bob at t0", got[1])
+	}
+	if got[2].Nick != "carol" || !got[2].LastActivity.IsZero() {
+		t.Fatalf("third user=%+v want inactive carol", got[2])
+	}
+	if got[3].Nick != "zoe" || !got[3].LastActivity.IsZero() {
+		t.Fatalf("fourth user=%+v want inactive zoe", got[3])
+	}
+
+	active := s.UsersInChannel("#a")
+	if !active[canonicalKey("alice")] || !active[canonicalKey("bob")] || !active[canonicalKey("zoe")] {
+		t.Fatalf("active set for #a missing expected members: %+v", active)
+	}
+	if active[canonicalKey("carol")] {
+		t.Fatalf("active set for #a should not include carol: %+v", active)
+	}
+}
+
+func TestSetChannelUsers_ReplacesSnapshotAndPrunesUsers(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#a")
+	s.SetChannelUsers("#a", []string{"alice", "bob"})
+	if got := len(s.UsersSortedByActivity()); got != 2 {
+		t.Fatalf("users=%d want 2", got)
+	}
+
+	s.SetChannelUsers("#a", []string{"alice"})
+	users := s.UsersSortedByActivity()
+	if len(users) != 1 || users[0].Nick != "alice" {
+		t.Fatalf("users after replace=%+v want only alice", users)
+	}
+}
+
+func TestRenameAndRemoveUserMembership(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#a")
+	s.JoinChannel("#b")
+	s.AddUserToChannel("#a", "alice")
+	s.AddUserToChannel("#b", "alice")
+	s.UpdateUserActivity("#a", "alice", time.Now())
+
+	s.RenameUserInAllChannels("alice", "alicia")
+	setA := s.UsersInChannel("#a")
+	if !setA[canonicalKey("alicia")] || setA[canonicalKey("alice")] {
+		t.Fatalf("rename not reflected in #a set: %+v", setA)
+	}
+
+	s.RemoveUserFromChannel("#a", "alicia")
+	setA = s.UsersInChannel("#a")
+	if setA[canonicalKey("alicia")] {
+		t.Fatalf("alicia should be removed from #a: %+v", setA)
+	}
+
+	s.RemoveUserFromAllChannels("alicia")
+	if got := len(s.UsersSortedByActivity()); got != 0 {
+		t.Fatalf("users=%d want 0", got)
+	}
+}
+
+func TestPartChannel_DropsChannelUsers(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#a")
+	s.SetChannelUsers("#a", []string{"alice", "bob"})
+	s.PartChannel("#a")
+	if got := len(s.UsersSortedByActivity()); got != 0 {
+		t.Fatalf("users after part=%d want 0", got)
 	}
 }
 

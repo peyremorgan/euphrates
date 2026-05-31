@@ -12,24 +12,46 @@ import (
 
 // recorder collects every callback fire for assertions.
 type recorder struct {
-	self     string
-	messages []state.Message
-	events   []string
-	joins    []string
-	parts    []string
-	lists    [][]string
+	self           string
+	messages       []state.Message
+	events         []string
+	joins          []string
+	parts          []string
+	lists          [][]string
+	userJoins      []string
+	userParts      []string
+	userQuits      []string
+	userNicks      []string
+	namesByChannel map[string][]string
 }
 
 var timestampPrefixPattern = regexp.MustCompile(`^\d\d:\d\d:\d\d\s`)
 
 func newRecorder(self string) (*recorder, Handlers) {
-	r := &recorder{self: self}
+	r := &recorder{self: self, namesByChannel: make(map[string][]string)}
 	return r, Handlers{
 		Self:      func() string { return r.self },
 		OnMessage: func(m state.Message) { r.messages = append(r.messages, m) },
 		OnEvent:   func(s string) { r.events = append(r.events, s) },
 		OnJoin:    func(c string) { r.joins = append(r.joins, c) },
 		OnPart:    func(c string) { r.parts = append(r.parts, c) },
+		OnUserJoin: func(channel, nick string) {
+			r.userJoins = append(r.userJoins, channel+":"+nick)
+		},
+		OnUserPart: func(channel, nick string) {
+			r.userParts = append(r.userParts, channel+":"+nick)
+		},
+		OnUserQuit: func(nick string) {
+			r.userQuits = append(r.userQuits, nick)
+		},
+		OnUserNick: func(oldNick, newNick string) {
+			r.userNicks = append(r.userNicks, oldNick+"->"+newNick)
+		},
+		OnNames: func(channel string, nicks []string) {
+			cp := make([]string, len(nicks))
+			copy(cp, nicks)
+			r.namesByChannel[channel] = cp
+		},
 		OnChannelList: func(names []string) {
 			cp := make([]string, len(names))
 			copy(cp, names)
@@ -164,6 +186,9 @@ func TestDispatchJoin_Self(t *testing.T) {
 	if len(r.events) == 0 || !strings.Contains(r.events[0], "joined #foo") {
 		t.Errorf("missing join event: %+v", r.events)
 	}
+	if !reflect.DeepEqual(r.userJoins, []string{"#foo:me"}) {
+		t.Fatalf("user joins=%v want [#foo:me]", r.userJoins)
+	}
 	assertHasTimestampPrefix(t, r.events[0])
 }
 
@@ -187,6 +212,9 @@ func TestDispatchPart_SelfAndReason(t *testing.T) {
 	}
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "(bye)") {
 		t.Errorf("reason missing: %+v", r.events)
+	}
+	if !reflect.DeepEqual(r.userParts, []string{"#foo:me"}) {
+		t.Fatalf("user parts=%v want [#foo:me]", r.userParts)
 	}
 	assertHasTimestampPrefix(t, r.events[0])
 }
@@ -214,6 +242,9 @@ func TestDispatchQuit(t *testing.T) {
 	if !strings.Contains(r.events[0], "(ping timeout)") {
 		t.Errorf("reason missing: %+v", r.events)
 	}
+	if !reflect.DeepEqual(r.userQuits, []string{"alice"}) {
+		t.Fatalf("user quits=%v want [alice]", r.userQuits)
+	}
 	assertHasTimestampPrefix(t, r.events[0])
 }
 
@@ -232,7 +263,28 @@ func TestDispatchNick_OtherRename(t *testing.T) {
 	if len(r.events) != 1 || !strings.Contains(r.events[0], "alice is now alicia") {
 		t.Errorf("nick event: %+v", r.events)
 	}
+	if !reflect.DeepEqual(r.userNicks, []string{"alice->alicia"}) {
+		t.Fatalf("user nicks=%v want [alice->alicia]", r.userNicks)
+	}
 	assertHasTimestampPrefix(t, r.events[0])
+}
+
+func TestDispatchNamesReply_ParsesPrefixes(t *testing.T) {
+	r, h := newRecorder("me")
+	dispatchNamesReply(h, []string{"me", "=", "#go", "@alice +bob carol!u@h"})
+	got := r.namesByChannel["#go"]
+	want := []string{"alice", "bob", "carol"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("names=%v want %v", got, want)
+	}
+}
+
+func TestDispatchNamesReply_IgnoresMalformed(t *testing.T) {
+	r, h := newRecorder("me")
+	dispatchNamesReply(h, []string{"only", "three", "params"})
+	if len(r.namesByChannel) != 0 {
+		t.Fatalf("unexpected names callbacks: %+v", r.namesByChannel)
+	}
 }
 
 func TestDispatchTopic(t *testing.T) {

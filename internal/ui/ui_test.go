@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 
@@ -117,8 +118,8 @@ func TestBuildLayout_IncludesSeparatorBetweenMainAndEvents(t *testing.T) {
 	if got := u.root.GetItem(1); got != u.contentRow {
 		t.Fatalf("item 1 is %T, want content row", got)
 	}
-	if got := u.contentRow.GetItemCount(); got != 3 {
-		t.Fatalf("content row item count=%d want 3", got)
+	if got := u.contentRow.GetItemCount(); got != 5 {
+		t.Fatalf("content row item count=%d want 5", got)
 	}
 	if got := u.contentRow.GetItem(0); got != u.sidebarCol {
 		t.Fatalf("content row item 0 is %T, want sidebar column", got)
@@ -128,6 +129,12 @@ func TestBuildLayout_IncludesSeparatorBetweenMainAndEvents(t *testing.T) {
 	}
 	if got := u.contentRow.GetItem(2); got != u.mainView {
 		t.Fatalf("content row item 2 is %T, want main view", got)
+	}
+	if got := u.contentRow.GetItem(3); got != u.usersDivider {
+		t.Fatalf("content row item 3 is %T, want users divider", got)
+	}
+	if got := u.contentRow.GetItem(4); got != u.usersCol {
+		t.Fatalf("content row item 4 is %T, want users column", got)
 	}
 }
 
@@ -312,6 +319,94 @@ func TestToggleSidebar_ResizesContentRow(t *testing.T) {
 	if hiddenAgainDividerW != 0 {
 		t.Fatalf("hidden-again divider width=%d want 0", hiddenAgainDividerW)
 	}
+}
+
+func TestToggleUsersPanel_ResizesContentRow(t *testing.T) {
+	u, _ := newTestUI(t)
+
+	drawUIRoot(t, u, 100, 20)
+	_, _, hiddenW, _ := u.usersView.GetRect()
+	_, _, hiddenDividerW, _ := u.usersDivider.GetRect()
+	if hiddenW != 0 {
+		t.Fatalf("hidden users width=%d want 0", hiddenW)
+	}
+	if hiddenDividerW != 0 {
+		t.Fatalf("hidden users divider width=%d want 0", hiddenDividerW)
+	}
+
+	u.toggleUsersPanel()
+	drawUIRoot(t, u, 100, 20)
+	_, _, shownW, _ := u.usersView.GetRect()
+	_, _, shownDividerW, _ := u.usersDivider.GetRect()
+	if shownW != usersPanelWidth {
+		t.Fatalf("shown users width=%d want %d", shownW, usersPanelWidth)
+	}
+	if shownDividerW != 1 {
+		t.Fatalf("shown users divider width=%d want 1", shownDividerW)
+	}
+
+	u.toggleUsersPanel()
+	drawUIRoot(t, u, 100, 20)
+	_, _, hiddenAgainW, _ := u.usersView.GetRect()
+	_, _, hiddenAgainDividerW, _ := u.usersDivider.GetRect()
+	if hiddenAgainW != 0 {
+		t.Fatalf("hidden-again users width=%d want 0", hiddenAgainW)
+	}
+	if hiddenAgainDividerW != 0 {
+		t.Fatalf("hidden-again users divider width=%d want 0", hiddenAgainDividerW)
+	}
+}
+
+func TestRefreshUsersPanel_ShowsSortedUsersAndActiveIndicator(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#a")
+	u.state.JoinChannel("#b")
+	u.state.SetChannelUsers("#a", []string{"alice", "bob"})
+	u.state.SetChannelUsers("#b", []string{"carol"})
+	u.state.UpdateUserActivity("#a", "bob", nowForTest())
+	u.state.SetTarget("#a")
+
+	u.refreshUsersPanel()
+
+	title := u.usersTitleView.GetText(true)
+	if !strings.Contains(title, "Users — 3") {
+		t.Fatalf("users title=%q want count 3", title)
+	}
+	body := u.usersView.GetText(true)
+	lines := strings.Split(body, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("lines=%d want 3 (%q)", len(lines), body)
+	}
+	if !strings.Contains(lines[0], "• ") || !strings.Contains(lines[0], "bob") {
+		t.Fatalf("first line should be active bob: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "• ") || !strings.Contains(lines[1], "alice") {
+		t.Fatalf("second line should be active alice: %q", lines[1])
+	}
+	if strings.Contains(lines[2], "• ") || !strings.Contains(lines[2], "carol") {
+		t.Fatalf("third line should be inactive carol: %q", lines[2])
+	}
+}
+
+func TestFormatDecimalSI(t *testing.T) {
+	cases := []struct {
+		in   int
+		want string
+	}{
+		{in: 42, want: "42"},
+		{in: 53_000, want: "53k"},
+		{in: 2_700_000, want: "2.7M"},
+		{in: 10_400, want: "10k"},
+	}
+	for _, tc := range cases {
+		if got := formatDecimalSI(tc.in); got != tc.want {
+			t.Fatalf("formatDecimalSI(%d)=%q want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func nowForTest() time.Time {
+	return time.Now().Add(-time.Second)
 }
 
 func TestRefreshSeparator_UsesSeparatorWidth(t *testing.T) {
@@ -1032,6 +1127,26 @@ func TestHandleKey_AltGTogglesSidebar(t *testing.T) {
 	}
 	if u.sidebarVisible {
 		t.Fatal("sidebar still visible after second Alt+G")
+	}
+}
+
+func TestHandleKey_AltUTogglesUsersPanel(t *testing.T) {
+	u, _ := newTestUI(t)
+
+	ev := tcell.NewEventKey(tcell.KeyRune, 'u', tcell.ModAlt)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("Alt+u not consumed")
+	}
+	if !u.usersVisible {
+		t.Fatal("users panel not visible after Alt+u")
+	}
+
+	evShift := tcell.NewEventKey(tcell.KeyRune, 'U', tcell.ModAlt)
+	if got := u.handleKey(evShift); got != nil {
+		t.Fatal("Alt+U not consumed")
+	}
+	if u.usersVisible {
+		t.Fatal("users panel still visible after second Alt+U")
 	}
 }
 

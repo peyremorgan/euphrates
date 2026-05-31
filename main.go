@@ -131,6 +131,11 @@ func run() error {
 		OnEvent:       u.OnEvent,
 		OnJoin:        u.OnJoin,
 		OnPart:        u.OnPart,
+		OnUserJoin:    u.OnUserJoin,
+		OnUserPart:    u.OnUserPart,
+		OnUserQuit:    u.OnUserQuit,
+		OnUserNick:    u.OnUserNick,
+		OnNames:       u.OnNames,
 		OnChannelList: st.SetChannelListCache,
 	})
 

@@ -40,6 +40,15 @@ type Handlers struct {
 	// OnPart is fired when *we* leave a channel.
 	OnPart func(channel string)
 
+	// OnUserJoin/OnUserPart/OnUserQuit/OnUserNick maintain membership snapshots.
+	OnUserJoin func(channel, nick string)
+	OnUserPart func(channel, nick string)
+	OnUserQuit func(nick string)
+	OnUserNick func(oldNick, newNick string)
+
+	// OnNames updates the full user set for a channel from RPL_NAMREPLY.
+	OnNames func(channel string, nicks []string)
+
 	// OnChannelList is fired when a LIST response has fully completed.
 	OnChannelList func(names []string)
 }
@@ -83,6 +92,36 @@ func (h Handlers) emitPart(channel string) {
 	}
 }
 
+func (h Handlers) emitUserJoin(channel, nick string) {
+	if h.OnUserJoin != nil {
+		h.OnUserJoin(channel, nick)
+	}
+}
+
+func (h Handlers) emitUserPart(channel, nick string) {
+	if h.OnUserPart != nil {
+		h.OnUserPart(channel, nick)
+	}
+}
+
+func (h Handlers) emitUserQuit(nick string) {
+	if h.OnUserQuit != nil {
+		h.OnUserQuit(nick)
+	}
+}
+
+func (h Handlers) emitUserNick(oldNick, newNick string) {
+	if h.OnUserNick != nil {
+		h.OnUserNick(oldNick, newNick)
+	}
+}
+
+func (h Handlers) emitNames(channel string, nicks []string) {
+	if h.OnNames != nil {
+		h.OnNames(channel, nicks)
+	}
+}
+
 func (h Handlers) emitChannelList(names []string) {
 	if h.OnChannelList != nil {
 		h.OnChannelList(names)
@@ -118,6 +157,9 @@ func dispatchJoin(h Handlers, src, channel string) {
 		return
 	}
 	nick := nickFromSource(src)
+	if nick != "" {
+		h.emitUserJoin(channel, nick)
+	}
 	if strings.EqualFold(nick, h.self()) {
 		h.emitJoin(channel)
 		h.emitEventNow(fmt.Sprintf("→ joined %s", channel))
@@ -133,6 +175,9 @@ func dispatchPart(h Handlers, src, channel, reason string) {
 		return
 	}
 	nick := nickFromSource(src)
+	if nick != "" {
+		h.emitUserPart(channel, nick)
+	}
 	suffix := ""
 	if reason != "" {
 		suffix = " (" + reason + ")"
@@ -152,6 +197,7 @@ func dispatchQuit(h Handlers, src, reason string) {
 	if nick == "" {
 		return
 	}
+	h.emitUserQuit(nick)
 	suffix := ""
 	if reason != "" {
 		suffix = " (" + reason + ")"
@@ -166,11 +212,56 @@ func dispatchNick(h Handlers, src, newNick string) {
 	if old == "" || newNick == "" {
 		return
 	}
+	h.emitUserNick(old, newNick)
 	if strings.EqualFold(old, h.self()) || strings.EqualFold(newNick, h.self()) {
 		h.emitEventNow(fmt.Sprintf("∗ you are now %s", newNick))
 		return
 	}
 	h.emitEventNow(fmt.Sprintf("∗ %s is now %s", old, newNick))
+}
+
+// dispatchNamesReply handles RPL_NAMREPLY (353), extracting channel users.
+func dispatchNamesReply(h Handlers, params []string) {
+	if len(params) < 4 {
+		return
+	}
+	channel := params[2]
+	raw := params[len(params)-1]
+	if channel == "" || raw == "" {
+		return
+	}
+
+	names := strings.Fields(raw)
+	nicks := make([]string, 0, len(names))
+	for _, token := range names {
+		nick := stripNamesPrefix(token)
+		if nick == "" {
+			continue
+		}
+		nicks = append(nicks, nick)
+	}
+	h.emitNames(channel, nicks)
+}
+
+func stripNamesPrefix(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	for len(token) > 0 {
+		switch token[0] {
+		case '~', '&', '@', '%', '+':
+			token = token[1:]
+		default:
+			goto done
+		}
+	}
+
+done:
+	if i := strings.IndexByte(token, '!'); i >= 0 {
+		token = token[:i]
+	}
+	return strings.TrimSpace(token)
 }
 
 // dispatchTopic handles a TOPIC command sent live during a session.

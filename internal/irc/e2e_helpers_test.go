@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -297,6 +298,23 @@ func (s *miniIRCServer) withClients(fn func(*miniClient)) {
 	}
 }
 
+func (s *miniIRCServer) channelNicks(channel string) []string {
+	low := strings.ToLower(channel)
+	out := make([]string, 0, 8)
+	s.withClients(func(c *miniClient) {
+		if c.hasChannel(low) {
+			nick := c.nickSnapshot()
+			if nick != "" {
+				out = append(out, nick)
+			}
+		}
+	})
+	sort.Slice(out, func(i, j int) bool {
+		return strings.ToLower(out[i]) < strings.ToLower(out[j])
+	})
+	return out
+}
+
 func (c *miniClient) loop() {
 	defer func() {
 		c.srv.remove(c)
@@ -350,6 +368,11 @@ func (c *miniClient) handleLine(line string) {
 				nick := c.nick
 				c.mu.Unlock()
 				c.broadcastChannel(ch, ":%s!u@localhost JOIN %s", nick, ch)
+				names := c.srv.channelNicks(ch)
+				if len(names) > 0 {
+					c.writef(":%s 353 %s = %s :%s\r\n", c.srv.server, nick, ch, strings.Join(names, " "))
+				}
+				c.writef(":%s 366 %s %s :End of /NAMES list\r\n", c.srv.server, nick, ch)
 			}
 		}
 	case "PART":

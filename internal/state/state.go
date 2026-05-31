@@ -3,6 +3,7 @@ package state
 import (
 	"sort"
 	"strings"
+	"time"
 )
 
 // Defaults applied when Config fields are zero.
@@ -26,6 +27,13 @@ type Config struct {
 	Grouping GroupingStrategy
 }
 
+// UserListEntry is a deduplicated user record for UI display.
+type UserListEntry struct {
+	Key          string
+	Nick         string
+	LastActivity time.Time
+}
+
 // State is the in-memory model of the client. All exported methods are safe
 // for concurrent use.
 type State struct {
@@ -38,6 +46,10 @@ type State struct {
 	order     []string            // canonical names in insertion order
 	nextOrder int
 	listCache map[string]string // canonicalKey -> original name from LIST
+
+	channelUsers     map[string]map[string]struct{} // channelKey -> userKey set
+	userDisplay      map[string]string              // userKey -> display nick
+	userLastActivity map[string]time.Time           // userKey -> most recent activity
 
 	counts  [NumGroups]int   // per-numeric-group channel count
 	visible map[GroupID]bool // group -> visible (default true)
@@ -60,13 +72,16 @@ func New(cfg Config) *State {
 		cfg.Grouping = DefaultGroupingStrategy()
 	}
 	s := &State{
-		messages:   NewRing[Message](cfg.MessageCap),
-		events:     NewRing[string](cfg.EventCap),
-		channels:   make(map[string]*Channel),
-		listCache:  make(map[string]string),
-		visible:    make(map[GroupID]bool),
-		serverName: cfg.ServerName,
-		grouping:   cfg.Grouping,
+		messages:         NewRing[Message](cfg.MessageCap),
+		events:           NewRing[string](cfg.EventCap),
+		channels:         make(map[string]*Channel),
+		listCache:        make(map[string]string),
+		channelUsers:     make(map[string]map[string]struct{}),
+		userDisplay:      make(map[string]string),
+		userLastActivity: make(map[string]time.Time),
+		visible:          make(map[GroupID]bool),
+		serverName:       cfg.ServerName,
+		grouping:         cfg.Grouping,
 	}
 	for i := 0; i < NumGroups; i++ {
 		s.visible[GroupID(i)] = true
@@ -156,6 +171,10 @@ func (s *State) PartChannel(name string) {
 		s.target = s.firstSendableLocked()
 	}
 	if c.Kind == ChanNormal {
+		for userKey := range s.channelUsers[key] {
+			s.pruneUserLocked(userKey)
+		}
+		delete(s.channelUsers, key)
 		s.applyGroupingLocked(GroupingTriggerPart, key)
 	}
 }
@@ -250,8 +269,242 @@ func (s *State) AppendMessage(m Message) (line string, visible bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := s.ensureChannelLocked(m.Channel)
+	if c.Kind == ChanNormal && m.Nick != "" {
+		s.addUserToChannelLocked(m.Channel, m.Nick)
+		s.updateUserActivityLocked(m.Channel, m.Nick, m.Time)
+	}
 	s.messages.Push(m)
 	return formatMessage(m, c.Kind), s.visible[c.Group]
+}
+
+// AddUserToChannel records that nick is present in channel.
+func (s *State) AddUserToChannel(channel, nick string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.addUserToChannelLocked(channel, nick)
+}
+
+func (s *State) addUserToChannelLocked(channel, nick string) {
+	nick = strings.TrimSpace(nick)
+	if nick == "" {
+		return
+	}
+	channelKey := canonicalKey(channel)
+	c := s.ensureChannelLocked(channel)
+	if c.Kind != ChanNormal {
+		return
+	}
+	userKey := canonicalKey(nick)
+	set := s.channelUsers[channelKey]
+	if set == nil {
+		set = make(map[string]struct{})
+		s.channelUsers[channelKey] = set
+	}
+	set[userKey] = struct{}{}
+	s.userDisplay[userKey] = nick
+}
+
+// SetChannelUsers replaces the known user set for a normal channel.
+func (s *State) SetChannelUsers(channel string, nicks []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	channelKey := canonicalKey(channel)
+	c := s.ensureChannelLocked(channel)
+	if c.Kind != ChanNormal {
+		return
+	}
+
+	next := make(map[string]struct{}, len(nicks))
+	for _, nick := range nicks {
+		nick = strings.TrimSpace(nick)
+		if nick == "" {
+			continue
+		}
+		userKey := canonicalKey(nick)
+		next[userKey] = struct{}{}
+		s.userDisplay[userKey] = nick
+	}
+
+	prev := s.channelUsers[channelKey]
+	s.channelUsers[channelKey] = next
+	for userKey := range prev {
+		if _, ok := next[userKey]; !ok {
+			s.pruneUserLocked(userKey)
+		}
+	}
+}
+
+// RemoveUserFromChannel removes nick from one channel membership set.
+func (s *State) RemoveUserFromChannel(channel, nick string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	channelKey := canonicalKey(channel)
+	userKey := canonicalKey(strings.TrimSpace(nick))
+	if userKey == "" {
+		return
+	}
+	set := s.channelUsers[channelKey]
+	if set == nil {
+		return
+	}
+	delete(set, userKey)
+	if len(set) == 0 {
+		delete(s.channelUsers, channelKey)
+	}
+	s.pruneUserLocked(userKey)
+}
+
+// RemoveUserFromAllChannels removes nick from every tracked normal channel.
+func (s *State) RemoveUserFromAllChannels(nick string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	userKey := canonicalKey(strings.TrimSpace(nick))
+	if userKey == "" {
+		return
+	}
+	for channelKey, set := range s.channelUsers {
+		delete(set, userKey)
+		if len(set) == 0 {
+			delete(s.channelUsers, channelKey)
+		}
+	}
+	s.pruneUserLocked(userKey)
+}
+
+// RenameUserInAllChannels renames oldNick membership and activity records.
+func (s *State) RenameUserInAllChannels(oldNick, newNick string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	oldKey := canonicalKey(strings.TrimSpace(oldNick))
+	newKey := canonicalKey(strings.TrimSpace(newNick))
+	if oldKey == "" || newKey == "" || oldKey == newKey {
+		if newKey != "" {
+			s.userDisplay[newKey] = strings.TrimSpace(newNick)
+		}
+		return
+	}
+
+	for _, set := range s.channelUsers {
+		if _, ok := set[oldKey]; !ok {
+			continue
+		}
+		delete(set, oldKey)
+		set[newKey] = struct{}{}
+	}
+
+	oldTime, hadOld := s.userLastActivity[oldKey]
+	newTime, hadNew := s.userLastActivity[newKey]
+	if hadOld && (!hadNew || oldTime.After(newTime)) {
+		s.userLastActivity[newKey] = oldTime
+	}
+	delete(s.userLastActivity, oldKey)
+
+	s.userDisplay[newKey] = strings.TrimSpace(newNick)
+	delete(s.userDisplay, oldKey)
+	s.pruneUserLocked(oldKey)
+}
+
+// UpdateUserActivity updates nick's last activity for normal channel messages.
+func (s *State) UpdateUserActivity(channel, nick string, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.updateUserActivityLocked(channel, nick, at)
+}
+
+func (s *State) updateUserActivityLocked(channel, nick string, at time.Time) {
+	if at.IsZero() {
+		return
+	}
+	s.addUserToChannelLocked(channel, nick)
+	channelKey := canonicalKey(channel)
+	if c, ok := s.channels[channelKey]; !ok || c.Kind != ChanNormal {
+		return
+	}
+	userKey := canonicalKey(strings.TrimSpace(nick))
+	if userKey == "" {
+		return
+	}
+	if prev, ok := s.userLastActivity[userKey]; !ok || at.After(prev) {
+		s.userLastActivity[userKey] = at
+	}
+}
+
+// UsersInChannel returns a canonical-key membership set for one channel.
+func (s *State) UsersInChannel(channel string) map[string]bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	channelKey := canonicalKey(channel)
+	c, ok := s.channels[channelKey]
+	if !ok || c.Kind != ChanNormal {
+		return map[string]bool{}
+	}
+	set := s.channelUsers[channelKey]
+	out := make(map[string]bool, len(set))
+	for userKey := range set {
+		out[userKey] = true
+	}
+	return out
+}
+
+// UsersSortedByActivity returns deduplicated users sorted by activity recency
+// (most recent first), then alphabetically for users with no activity.
+func (s *State) UsersSortedByActivity() []UserListEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seen := make(map[string]struct{})
+	for _, set := range s.channelUsers {
+		for userKey := range set {
+			seen[userKey] = struct{}{}
+		}
+	}
+
+	out := make([]UserListEntry, 0, len(seen))
+	for userKey := range seen {
+		nick := s.userDisplay[userKey]
+		if nick == "" {
+			nick = userKey
+		}
+		out = append(out, UserListEntry{
+			Key:          userKey,
+			Nick:         nick,
+			LastActivity: s.userLastActivity[userKey],
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		a := out[i]
+		b := out[j]
+		aActive := !a.LastActivity.IsZero()
+		bActive := !b.LastActivity.IsZero()
+		if aActive != bActive {
+			return aActive
+		}
+		if aActive && !a.LastActivity.Equal(b.LastActivity) {
+			return a.LastActivity.After(b.LastActivity)
+		}
+		return canonicalKey(a.Nick) < canonicalKey(b.Nick)
+	})
+
+	return out
+}
+
+func (s *State) pruneUserLocked(userKey string) {
+	if userKey == "" {
+		return
+	}
+	for _, set := range s.channelUsers {
+		if _, ok := set[userKey]; ok {
+			return
+		}
+	}
+	delete(s.userDisplay, userKey)
+	delete(s.userLastActivity, userKey)
 }
 
 // AddEvent appends a pre-formatted event line to the events ring.

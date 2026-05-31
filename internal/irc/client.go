@@ -190,10 +190,12 @@ func (c *Client) registerCallbacks() {
 		c.handlers.emitChannelList(c.listBuf)
 		c.listBuf = nil
 	})
+	c.conn.AddCallback("353", func(m ircmsg.Message) {
+		dispatchNamesReply(c.handlers, m.Params)
+	})
 
 	// Server numerics 001..599. Skip a couple that ircevent already drives
-	// or that are pure protocol noise (NAMES list 353/366 are noisy; we
-	// route them to the server log too for completeness).
+	// or that are pure protocol noise.
 	for code := 1; code <= 599; code++ {
 		if code == 322 || code == 323 {
 			continue
