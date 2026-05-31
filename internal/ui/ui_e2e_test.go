@@ -121,6 +121,50 @@ func TestPartCompletion_DoubleTabAfterLCPExpansion_E2E(t *testing.T) {
 	}
 }
 
+func TestCommandCompletionAndHelp_E2E(t *testing.T) {
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20})
+	fs := &fakeSender{nick: "me"}
+	u := New(s, fs)
+	u.eventsView.SetRect(0, 0, 120, 5)
+
+	u.input.SetText("/h")
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)); got != nil {
+		t.Fatalf("tab not consumed for /h")
+	}
+	if got := u.input.GetText(); got != "/help " {
+		t.Fatalf("input=%q want /help ", got)
+	}
+
+	u.input.SetText("/")
+	before := len(u.state.Events())
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)); got != nil {
+		t.Fatalf("tab not consumed for ambiguous /")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected command completion suggestions, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	for _, want := range []string{"/help", "/join", "/me", "/part", "/quit"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in events: %v", want, after[before:])
+		}
+	}
+
+	u.input.SetText("/help")
+	u.onInputDone(tcell.KeyEnter)
+	ev := u.state.Events()
+	if len(ev) == 0 {
+		t.Fatal("expected help output in events")
+	}
+	joinedEvents := strings.Join(ev, " ")
+	for _, want := range []string{"commands:", "/help", "/join", "/quit", "usage:"} {
+		if !strings.Contains(joinedEvents, want) {
+			t.Fatalf("missing %q in help output: %v", want, ev)
+		}
+	}
+}
+
 func TestJoinAndPartHooks_ApplyRegroupingStrategy_E2E(t *testing.T) {
 	strategy := uiGroupingStrategyFunc(func(input state.GroupingInput) (state.Assignment, bool, error) {
 		out := make(state.Assignment, len(input.Channels))
