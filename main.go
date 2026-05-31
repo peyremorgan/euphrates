@@ -3,9 +3,11 @@
 package main
 
 import (
+	"embed"
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -16,6 +18,14 @@ import (
 	"euphrates/internal/state"
 	"euphrates/internal/ui"
 )
+
+const defaultGroupingScriptDir = "examples/grouping"
+
+// shippedGroupingScripts contains starter Lua strategies copied into the
+// user's grouping directory on first run.
+//
+//go:embed examples/grouping/*.lua
+var shippedGroupingScripts embed.FS
 
 func main() {
 	if err := run(); err != nil {
@@ -47,24 +57,36 @@ func run() error {
 	}
 
 	strategy := state.DefaultGroupingStrategy()
-	groupingEvent := ""
+	groupingEvents := make([]string, 0, 2)
 	dir, explicit, err := resolveGroupingDir(*groupDir)
 	if err != nil {
 		return err
+	}
+	if !explicit {
+		if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+			written, installErr := installDefaultGroupingScripts(shippedGroupingScripts, defaultGroupingScriptDir, dir)
+			if installErr != nil {
+				groupingEvents = append(groupingEvents, fmt.Sprintf("grouping defaults install failed: %v", installErr))
+			} else if written > 0 {
+				groupingEvents = append(groupingEvents, fmt.Sprintf("grouping defaults installed in %s", dir))
+			}
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	if info, err := os.Stat(dir); err == nil {
 		if !info.IsDir() {
 			if explicit {
 				return fmt.Errorf("grouping path is not a directory: %s", dir)
 			}
-			groupingEvent = fmt.Sprintf("grouping disabled: %s is not a directory", dir)
+			groupingEvents = append(groupingEvents, fmt.Sprintf("grouping disabled: %s is not a directory", dir))
 		} else {
 			loaded, loadErr := grouping.LoadDir(dir)
 			if loadErr != nil {
-				groupingEvent = fmt.Sprintf("grouping load failed from %s: %v", dir, loadErr)
+				groupingEvents = append(groupingEvents, fmt.Sprintf("grouping load failed from %s: %v", dir, loadErr))
 			} else {
 				strategy = loaded
-				groupingEvent = fmt.Sprintf("grouping strategies loaded from %s", dir)
+				groupingEvents = append(groupingEvents, fmt.Sprintf("grouping strategies loaded from %s", dir))
 			}
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
@@ -81,8 +103,8 @@ func run() error {
 		ServerName: irc.HostOnly(*server),
 		Grouping:   strategy,
 	})
-	if groupingEvent != "" {
-		st.AddEvent(groupingEvent)
+	for _, event := range groupingEvents {
+		st.AddEvent(event)
 	}
 
 	cli, err := irc.New(irc.Config{
@@ -149,9 +171,47 @@ func resolveGroupingDir(override string) (path string, explicit bool, err error)
 	if override != "" {
 		return override, true, nil
 	}
-	configDir, err := os.UserConfigDir()
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", false, err
 	}
-	return filepath.Join(configDir, "euphrates", "grouping.d"), false, nil
+	return filepath.Join(homeDir, ".euphrates", "grouping.d"), false, nil
+}
+
+func installDefaultGroupingScripts(source fs.FS, sourceDir, targetDir string) (int, error) {
+	entries, err := fs.ReadDir(source, sourceDir)
+	if err != nil {
+		return 0, err
+	}
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		return 0, err
+	}
+
+	written := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(strings.ToLower(name), ".lua") {
+			continue
+		}
+		targetPath := filepath.Join(targetDir, name)
+		if _, err := os.Stat(targetPath); err == nil {
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return written, err
+		}
+
+		content, err := fs.ReadFile(source, filepath.Join(sourceDir, name))
+		if err != nil {
+			return written, err
+		}
+		if err := os.WriteFile(targetPath, content, 0o644); err != nil {
+			return written, err
+		}
+		written++
+	}
+
+	return written, nil
 }
