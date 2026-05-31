@@ -142,11 +142,13 @@ The input line is prefixed with the current target channel in brackets. The pref
 | -------------- | --------------------------------------- |
 | Alt+1..0       | Toggle visibility of numeric group 1-10 |
 | Alt-G          | Show/hide channels sidebar              |
+| Alt-L          | Open/close channel browser              |
 | F1..F10        | Solo numeric group 1-10                 |
 | Ctrl-N         | Next channel (target)                   |
 | Ctrl-P         | Previous channel (target)               |
 | Up / Down      | Scroll main message history (input empty) |
 | Ctrl-C         | Quit                                    |
+| `/list`        | Open channel browser from cached LIST   |
 | `/me <text>`   | Send a CTCP ACTION to the target        |
 | `/quit [text]` | Disconnect                              |
 
