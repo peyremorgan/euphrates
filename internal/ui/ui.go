@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -24,6 +25,8 @@ type Sender interface {
 	Quit(reason string)
 	// Join asks the server to join channel.
 	Join(channel string) error
+	// Part asks the server to leave channel with an optional reason.
+	Part(channel, reason string) error
 }
 
 // UI owns the tview widgets and routes events between state and Sender.
@@ -35,17 +38,24 @@ type UI struct {
 	manualScroll bool
 
 	joinCompletion joinCompletionState
+	partCompletion partCompletionState
 
-	statusView      *tview.TextView
-	statusCountView *tview.TextView
-	statusRow       *tview.Flex
-	mainView        *tview.TextView
-	separatorView   *tview.TextView
-	eventsView      *tview.TextView
-	promptView      *tview.TextView
-	input           *tview.InputField
-	inputRow        *tview.Flex
-	root            *tview.Flex
+	statusView       *tview.TextView
+	statusCountView  *tview.TextView
+	statusRow        *tview.Flex
+	sidebarView      *tview.TextView
+	sidebarTitleView *tview.TextView
+	sidebarCol       *tview.Flex
+	sidebarDivider   *tview.TextView
+	contentRow       *tview.Flex
+	mainView         *tview.TextView
+	separatorView    *tview.TextView
+	eventsView       *tview.TextView
+	promptView       *tview.TextView
+	input            *tview.InputField
+	inputRow         *tview.Flex
+	root             *tview.Flex
+	sidebarVisible   bool
 }
 
 type joinCompletionState struct {
@@ -53,8 +63,15 @@ type joinCompletionState struct {
 	matches       []string
 }
 
+type partCompletionState struct {
+	expandedInput string
+	matches       []string
+}
+
 const dottedSeparatorRune = "┄"
+const sidebarDividerRune = "│"
 const maxEventsViewRows = 5
+const sidebarWidth = 30
 
 // New builds a UI bound to the given state and Sender.
 func New(s *state.State, sender Sender) *UI {
@@ -65,6 +82,7 @@ func New(s *state.State, sender Sender) *UI {
 	}
 	u.buildLayout()
 	u.app.SetBeforeDrawFunc(func(tcell.Screen) bool {
+		u.refreshSidebarDivider()
 		u.refreshSeparator()
 		return false
 	})
@@ -118,6 +136,7 @@ func (u *UI) OnJoin(channel string) {
 	u.state.JoinChannel(channel)
 	u.app.QueueUpdateDraw(func() {
 		u.refreshStatus()
+		u.refreshSidebar()
 		u.refreshPrompt()
 	})
 }
@@ -156,11 +175,39 @@ func (u *UI) buildLayout() {
 	u.statusRow = tview.NewFlex().SetDirection(tview.FlexColumn)
 	u.statusRow.AddItem(u.statusView, 0, 1, false)
 	u.statusRow.AddItem(u.statusCountView, 0, 0, false)
+	u.sidebarView = tview.NewTextView().
+		SetDynamicColors(true).
+		SetScrollable(true).
+		SetWrap(false)
+	u.sidebarView.SetTextColor(tcell.GetColor(chrome.EventsForeground))
+
+	u.sidebarTitleView = tview.NewTextView().
+		SetDynamicColors(true).
+		SetWrap(false)
+	u.sidebarTitleView.SetBackgroundColor(tcell.GetColor(chrome.Separator))
+	u.sidebarTitleView.SetTextStyle(
+		tcell.StyleDefault.
+			Foreground(tcell.GetColor(chrome.StatusForeground)).
+			Background(tcell.GetColor(chrome.Separator)),
+	)
+	u.sidebarTitleView.SetText(" Groups ")
+
+	u.sidebarCol = tview.NewFlex().SetDirection(tview.FlexRow)
+	u.sidebarCol.AddItem(u.sidebarTitleView, 1, 0, false)
+	u.sidebarCol.AddItem(u.sidebarView, 0, 1, false)
+
+	u.sidebarDivider = tview.NewTextView().
+		SetDynamicColors(true).
+		SetWrap(false)
 	u.mainView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetScrollable(true).
 		SetWrap(true).
 		SetWordWrap(true)
+	u.contentRow = tview.NewFlex().SetDirection(tview.FlexColumn)
+	u.contentRow.AddItem(u.sidebarCol, 0, 0, false)
+	u.contentRow.AddItem(u.sidebarDivider, 0, 0, false)
+	u.contentRow.AddItem(u.mainView, 0, 1, false)
 	u.separatorView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(false)
@@ -182,7 +229,7 @@ func (u *UI) buildLayout() {
 
 	u.root = tview.NewFlex().SetDirection(tview.FlexRow)
 	u.root.AddItem(u.statusRow, 1, 0, false)
-	u.root.AddItem(u.mainView, 0, 1, false)
+	u.root.AddItem(u.contentRow, 0, 1, false)
 	u.root.AddItem(u.separatorView, 1, 0, false)
 	u.root.AddItem(u.eventsView, 5, 0, false)
 	u.root.AddItem(u.inputRow, 1, 0, true)
@@ -192,7 +239,9 @@ func (u *UI) buildLayout() {
 // startup; not normally needed thereafter.
 func (u *UI) RefreshAll() {
 	u.refreshStatus()
+	u.refreshSidebar()
 	u.refreshMain()
+	u.refreshSidebarDivider()
 	u.refreshSeparator()
 	u.refreshEvents()
 	u.refreshPrompt()
@@ -227,6 +276,60 @@ func (u *UI) refreshEvents() {
 	}
 }
 
+func (u *UI) refreshSidebar() {
+	channels := u.state.Channels()
+	target := u.state.Target()
+	grouped := make([][]string, state.NumGroups)
+	for _, c := range channels {
+		if !c.Group.IsNumeric() {
+			continue
+		}
+		grouped[int(c.Group)] = append(grouped[int(c.Group)], c.Name)
+	}
+
+	var b strings.Builder
+	for i := 0; i < state.NumGroups; i++ {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(formatGroupHeader(i, u.state.IsVisible(state.GroupID(i))))
+		for _, name := range grouped[i] {
+			b.WriteByte('\n')
+			if target != "" && strings.EqualFold(name, target) {
+				b.WriteString("▶ ")
+			} else {
+				b.WriteString("  ")
+			}
+			b.WriteString(state.Escape(name))
+		}
+	}
+	u.sidebarView.SetText(b.String())
+}
+
+func formatGroupHeader(groupIndex int, visible bool) string {
+	digit := digitForGroup(groupIndex)
+	// Create a left-aligned header like: ● 1 ─────────────────────────
+	const lineChar = "─"
+	const totalWidth = sidebarWidth
+	const indicatorVisible = "●"
+	const indicatorHidden = "○"
+	const indicatorWidth = 2 // circle + trailing space
+	const digitWidth = 1
+	const gapWidth = 1 // spacing between digit and line
+
+	lineWidth := totalWidth - indicatorWidth - digitWidth - gapWidth
+	if lineWidth < 1 {
+		lineWidth = 1
+	}
+
+	indicator := indicatorHidden
+	if visible {
+		indicator = indicatorVisible
+	}
+
+	return indicator + " " + digit + " " + strings.Repeat(lineChar, lineWidth)
+}
+
 func eventsViewHeight(lines int) int {
 	if lines <= 0 {
 		return 0
@@ -235,6 +338,33 @@ func eventsViewHeight(lines int) int {
 		return maxEventsViewRows
 	}
 	return lines
+}
+
+func (u *UI) refreshSidebarDivider() {
+	if u.sidebarDivider == nil || !u.sidebarVisible {
+		if u.sidebarDivider != nil {
+			u.sidebarDivider.SetText("")
+		}
+		return
+	}
+	_, _, _, height := u.sidebarDivider.GetRect()
+	if height <= 0 {
+		_, _, _, height = u.contentRow.GetRect()
+	}
+	if height <= 0 {
+		u.sidebarDivider.SetText("")
+		return
+	}
+
+	var b strings.Builder
+	for i := 0; i < height; i++ {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(sidebarDividerRune)
+	}
+	sepColor := state.ActiveChromeTheme().Separator
+	u.sidebarDivider.SetText("[" + sepColor + "]" + b.String() + state.ResetColor())
 }
 
 func (u *UI) refreshSeparator() {
@@ -271,6 +401,7 @@ func (u *UI) refreshPrompt() {
 // that may change which messages are visible (toggle, part).
 func (u *UI) refreshAfterStructuralChange() {
 	u.refreshStatus()
+	u.refreshSidebar()
 	u.refreshMain()
 	u.refreshPrompt()
 }
@@ -286,6 +417,10 @@ func (u *UI) bindKeys() {
 func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 	// Alt+digit toggles a numeric group.
 	if ev.Modifiers()&tcell.ModAlt != 0 {
+		if unicode.ToLower(ev.Rune()) == 'g' {
+			u.toggleSidebar()
+			return nil
+		}
 		if g, ok := groupForRune(ev.Rune()); ok {
 			u.toggleGroup(g)
 			return nil
@@ -311,11 +446,13 @@ func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyCtrlN:
 		u.state.NextChannel()
 		u.refreshStatus()
+		u.refreshSidebar()
 		u.refreshPrompt()
 		return nil
 	case tcell.KeyCtrlP:
 		u.state.PrevChannel()
 		u.refreshStatus()
+		u.refreshSidebar()
 		u.refreshPrompt()
 		return nil
 	case tcell.KeyCtrlC:
@@ -324,6 +461,9 @@ func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case tcell.KeyTab:
 		if u.tryJoinCompletion() {
+			return nil
+		}
+		if u.tryPartCompletion() {
 			return nil
 		}
 	}
@@ -355,6 +495,20 @@ func groupForFunctionKey(k tcell.Key) (state.GroupID, bool) {
 func (u *UI) toggleGroup(g state.GroupID) {
 	u.state.ToggleGroup(g)
 	u.refreshAfterStructuralChange()
+}
+
+func (u *UI) toggleSidebar() {
+	u.sidebarVisible = !u.sidebarVisible
+	if u.sidebarVisible {
+		u.refreshSidebar()
+		u.refreshSidebarDivider()
+		u.contentRow.ResizeItem(u.sidebarCol, sidebarWidth, 0)
+		u.contentRow.ResizeItem(u.sidebarDivider, 1, 0)
+		return
+	}
+	u.contentRow.ResizeItem(u.sidebarCol, 0, 0)
+	u.contentRow.ResizeItem(u.sidebarDivider, 0, 0)
+	u.sidebarDivider.SetText("")
 }
 
 func (u *UI) soloGroup(g state.GroupID) {
@@ -410,7 +564,8 @@ func (u *UI) onInputDone(key tcell.Key) {
 }
 
 // handleSubmit interprets a submitted line as a command (`/me ...`,
-// `/quit ...`) or a plain message to the current target. Pure-ish: relies on
+// `/join ...`, `/part ...`, `/quit ...`) or a plain message to the current
+// target. Pure-ish: relies on
 // state and Sender but no tview surface, so it's directly testable.
 func (u *UI) handleSubmit(text string) {
 	text = strings.TrimRight(text, " \t")
@@ -459,8 +614,73 @@ func (u *UI) handleCommand(line string) {
 		if err := u.sender.Join(rest); err != nil {
 			u.addEvent("join failed: " + err.Error())
 		}
+	case "/part":
+		target := ""
+		reason := ""
+
+		if rest == "" {
+			target = u.state.Target()
+		} else {
+			first, tail := splitFirstArg(rest)
+			if c, ok := u.state.Channel(first); ok {
+				target = c.Name
+				reason = tail
+			} else if strings.EqualFold(first, state.ServerChannelName) {
+				target = state.ServerChannelName
+				reason = tail
+			} else if isChannelName(first) {
+				target = first
+				reason = tail
+			} else {
+				target = u.state.Target()
+				reason = strings.TrimSpace(rest)
+			}
+		}
+
+		if target == "" {
+			u.addEvent("(no target — join a channel first)")
+			return
+		}
+		if c, ok := u.state.Channel(target); ok {
+			if c.Kind != state.ChanNormal {
+				u.addEvent("(cannot part from queries/server)")
+				return
+			}
+			target = c.Name
+		} else if !isChannelName(target) {
+			u.addEvent("(cannot part from queries/server)")
+			return
+		}
+
+		if err := u.sender.Part(target, reason); err != nil {
+			u.addEvent("part failed: " + err.Error())
+		}
 	default:
 		u.addEvent("(unknown command: " + cmd + ")")
+	}
+}
+
+func splitFirstArg(s string) (first, rest string) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", ""
+	}
+	i := strings.IndexAny(s, " \t")
+	if i < 0 {
+		return s, ""
+	}
+	return s[:i], strings.TrimLeft(s[i+1:], " \t")
+}
+
+func isChannelName(name string) bool {
+	if name == "" {
+		return false
+	}
+	switch name[0] {
+	case '#', '&', '+', '!':
+		return true
+	default:
+		return false
 	}
 }
 
@@ -496,6 +716,43 @@ func (u *UI) tryJoinCompletion() bool {
 		expanded := "/join " + lcp
 		u.input.SetText(expanded)
 		u.joinCompletion = joinCompletionState{
+			expandedInput: expanded,
+			matches:       append([]string(nil), matches...),
+		}
+		return true
+	}
+
+	u.showCompletionList(matches)
+	return true
+}
+
+func (u *UI) tryPartCompletion() bool {
+	text := u.input.GetText()
+	if !strings.HasPrefix(strings.ToLower(text), "/part ") {
+		u.partCompletion = partCompletionState{}
+		return false
+	}
+	if text == u.partCompletion.expandedInput && len(u.partCompletion.matches) > 1 {
+		u.showCompletionList(u.partCompletion.matches)
+		return true
+	}
+	u.partCompletion = partCompletionState{}
+
+	partial := text[len("/part "):]
+	matches := u.state.MatchPartableChannels(partial)
+	if len(matches) == 0 {
+		return true
+	}
+	if len(matches) == 1 {
+		u.input.SetText("/part " + matches[0])
+		return true
+	}
+
+	lcp := longestCommonPrefix(matches)
+	if lcp != "" && !strings.EqualFold(lcp, partial) {
+		expanded := "/part " + lcp
+		u.input.SetText(expanded)
+		u.partCompletion = partCompletionState{
 			expandedInput: expanded,
 			matches:       append([]string(nil), matches...),
 		}

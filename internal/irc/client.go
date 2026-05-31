@@ -27,8 +27,8 @@ type Config struct {
 }
 
 // Client owns an ircevent.Connection and an associated Handlers struct.
-// Methods Nick, SendPrivmsg, SendAction, Quit make Client an implementation
-// of ui.Sender.
+// Methods Nick, SendPrivmsg, SendAction, Join, Part, Quit make Client an
+// implementation of ui.Sender.
 type Client struct {
 	conn     *ircevent.Connection
 	handlers Handlers
@@ -116,6 +116,15 @@ func (c *Client) SendAction(target, text string) error {
 // Join asks the server to join channel.
 func (c *Client) Join(channel string) error {
 	return c.conn.Join(channel)
+}
+
+// Part asks the server to leave channel. If reason is non-empty, it is sent
+// as the PART message suffix.
+func (c *Client) Part(channel, reason string) error {
+	if reason == "" {
+		return c.conn.Part(channel)
+	}
+	return c.conn.Send("PART", channel, reason)
 }
 
 // Quit closes the connection with the given reason.

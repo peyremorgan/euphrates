@@ -21,12 +21,14 @@ type testRecorder struct {
 	parts  []string
 	msgCh  chan state.Message
 	joinCh chan string
+	partCh chan string
 }
 
 func newTestRecorder() *testRecorder {
 	return &testRecorder{
 		msgCh:  make(chan state.Message, 64),
 		joinCh: make(chan string, 16),
+		partCh: make(chan string, 16),
 	}
 }
 
@@ -59,6 +61,10 @@ func (r *testRecorder) handlers() Handlers {
 			r.mu.Lock()
 			r.parts = append(r.parts, ch)
 			r.mu.Unlock()
+			select {
+			case r.partCh <- ch:
+			default:
+			}
 		},
 	}
 }
@@ -74,6 +80,45 @@ func waitForJoin(t *testing.T, rec *testRecorder, channel string) {
 			}
 		case <-deadline:
 			t.Fatalf("timed out waiting for join %q", channel)
+		}
+	}
+}
+
+func waitForPart(t *testing.T, rec *testRecorder, channel string) {
+	t.Helper()
+	deadline := time.After(8 * time.Second)
+	for {
+		select {
+		case got := <-rec.partCh:
+			if strings.EqualFold(got, channel) {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for part %q", channel)
+		}
+	}
+}
+
+func waitForEventContains(t *testing.T, rec *testRecorder, want string) {
+	t.Helper()
+	deadline := time.After(8 * time.Second)
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+
+	for {
+		rec.mu.Lock()
+		for _, line := range rec.events {
+			if strings.Contains(line, want) {
+				rec.mu.Unlock()
+				return
+			}
+		}
+		rec.mu.Unlock()
+
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for event containing %q", want)
+		case <-tick.C:
 		}
 	}
 }
@@ -174,6 +219,12 @@ func runTwoClientScenario(t *testing.T, serverAddr string) {
 	if !strings.EqualFold(dm.Nick, clientA.Nick()) {
 		t.Fatalf("direct message nick=%q want %q", dm.Nick, clientA.Nick())
 	}
+
+	if err := clientA.Part(channel, "see ya"); err != nil {
+		t.Fatalf("send part: %v", err)
+	}
+	waitForPart(t, recA, channel)
+	waitForEventContains(t, recB, "left "+channel+" (see ya)")
 }
 
 type miniIRCServer struct {
@@ -299,6 +350,32 @@ func (c *miniClient) handleLine(line string) {
 				nick := c.nick
 				c.mu.Unlock()
 				c.broadcastChannel(ch, ":%s!u@localhost JOIN %s", nick, ch)
+			}
+		}
+	case "PART":
+		if len(params) >= 1 {
+			reason := ""
+			if len(params) >= 2 {
+				reason = params[1]
+			}
+			for _, ch := range strings.Split(params[0], ",") {
+				ch = strings.TrimSpace(ch)
+				if ch == "" {
+					continue
+				}
+				c.mu.Lock()
+				nick := c.nick
+				c.mu.Unlock()
+
+				if reason != "" {
+					c.broadcastChannel(ch, ":%s!u@localhost PART %s :%s", nick, ch, reason)
+				} else {
+					c.broadcastChannel(ch, ":%s!u@localhost PART %s", nick, ch)
+				}
+
+				c.mu.Lock()
+				delete(c.channels, strings.ToLower(ch))
+				c.mu.Unlock()
 			}
 		}
 	case "PRIVMSG":

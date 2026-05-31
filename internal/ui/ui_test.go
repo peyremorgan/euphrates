@@ -19,13 +19,16 @@ type fakeSender struct {
 	privmsgs []sentMsg
 	actions  []sentMsg
 	joins    []string
+	parts    []sentPart
 	quitWith string
 	quitN    int
 	sendErr  error
 	joinErr  error
+	partErr  error
 }
 
 type sentMsg struct{ Target, Text string }
+type sentPart struct{ Channel, Reason string }
 
 func (f *fakeSender) Nick() string { return f.nick }
 
@@ -66,6 +69,16 @@ func (f *fakeSender) Join(channel string) error {
 	return nil
 }
 
+func (f *fakeSender) Part(channel, reason string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.partErr != nil {
+		return f.partErr
+	}
+	f.parts = append(f.parts, sentPart{Channel: channel, Reason: reason})
+	return nil
+}
+
 // newTestUI builds a UI without starting the tview event loop.
 func newTestUI(t *testing.T) (*UI, *fakeSender) {
 	t.Helper()
@@ -100,6 +113,204 @@ func TestBuildLayout_IncludesSeparatorBetweenMainAndEvents(t *testing.T) {
 	}
 	if got := u.root.GetItem(3); got != u.eventsView {
 		t.Fatalf("item 3 is %T, want events view", got)
+	}
+	if got := u.root.GetItem(1); got != u.contentRow {
+		t.Fatalf("item 1 is %T, want content row", got)
+	}
+	if got := u.contentRow.GetItemCount(); got != 3 {
+		t.Fatalf("content row item count=%d want 3", got)
+	}
+	if got := u.contentRow.GetItem(0); got != u.sidebarCol {
+		t.Fatalf("content row item 0 is %T, want sidebar column", got)
+	}
+	if got := u.contentRow.GetItem(1); got != u.sidebarDivider {
+		t.Fatalf("content row item 1 is %T, want sidebar divider", got)
+	}
+	if got := u.contentRow.GetItem(2); got != u.mainView {
+		t.Fatalf("content row item 2 is %T, want main view", got)
+	}
+}
+
+func TestRefreshSidebar_ShowsAllGroupHeadersWhenEmpty(t *testing.T) {
+	u, _ := newTestUI(t)
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+	lines := strings.Split(got, "\n")
+	if len(lines) != state.NumGroups {
+		t.Fatalf("line count=%d want %d", len(lines), state.NumGroups)
+	}
+	for i := 0; i < state.NumGroups; i++ {
+		// Each header starts with a visibility indicator and keeps fixed width.
+		digit := digitForGroup(i)
+		if !strings.HasPrefix(lines[i], "● ") {
+			t.Fatalf("line %d=%q missing visible indicator", i, lines[i])
+		}
+		if !strings.Contains(lines[i], digit) {
+			t.Fatalf("line %d=%q missing digit %q", i, lines[i], digit)
+		}
+		if !strings.Contains(lines[i], "─") {
+			t.Fatalf("line %d=%q missing horizontal line characters", i, lines[i])
+		}
+		if w := len([]rune(lines[i])); w != sidebarWidth {
+			t.Fatalf("line %d width=%d want %d (%q)", i, w, sidebarWidth, lines[i])
+		}
+	}
+}
+
+func TestRefreshSidebar_UsesEmptyCircleForHiddenGroups(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.SetVisible(state.GroupID(0), false)
+	u.state.SetVisible(state.GroupID(2), false)
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+	lines := strings.Split(got, "\n")
+	if len(lines) != state.NumGroups {
+		t.Fatalf("line count=%d want %d", len(lines), state.NumGroups)
+	}
+	if !strings.HasPrefix(lines[0], "○ 1 ") {
+		t.Fatalf("group 1 hidden header=%q want prefix %q", lines[0], "○ 1 ")
+	}
+	if !strings.HasPrefix(lines[2], "○ 3 ") {
+		t.Fatalf("group 3 hidden header=%q want prefix %q", lines[2], "○ 3 ")
+	}
+	if !strings.HasPrefix(lines[1], "● 2 ") {
+		t.Fatalf("group 2 visible header=%q want prefix %q", lines[1], "● 2 ")
+	}
+}
+
+func TestFormatGroupHeader_IndicatorAndWidth(t *testing.T) {
+	t.Run("visible", func(t *testing.T) {
+		got := formatGroupHeader(0, true)
+		if !strings.HasPrefix(got, "● 1 ") {
+			t.Fatalf("prefix=%q", got)
+		}
+		if w := len([]rune(got)); w != sidebarWidth {
+			t.Fatalf("width=%d want %d (%q)", w, sidebarWidth, got)
+		}
+	})
+	t.Run("hidden", func(t *testing.T) {
+		got := formatGroupHeader(state.NumGroups-1, false)
+		if !strings.HasPrefix(got, "○ 0 ") {
+			t.Fatalf("prefix=%q", got)
+		}
+		if w := len([]rune(got)); w != sidebarWidth {
+			t.Fatalf("width=%d want %d (%q)", w, sidebarWidth, got)
+		}
+	})
+}
+
+func TestRefreshSidebar_UsesInsertionOrderWithinGroup(t *testing.T) {
+	u, _ := newTestUI(t)
+	for _, ch := range []string{"#a", "#b", "#c", "#d", "#e", "#f", "#g", "#h", "#i", "#j", "#k"} {
+		u.state.JoinChannel(ch)
+	}
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+	// Verify the channels appear in insertion order after a group header containing "1"
+	lines := strings.Split(got, "\n")
+	foundGroup1 := false
+	for i, line := range lines {
+		if strings.Contains(line, "1") && strings.Contains(line, "─") {
+			foundGroup1 = true
+			// Next two lines should be channels in insertion order; current target
+			// is marked with the active-channel indicator.
+			if i+2 < len(lines) && lines[i+1] == "▶ #a" && lines[i+2] == "  #k" {
+				return // Test passed
+			}
+			t.Fatalf("group 1 channels not in expected insertion order after line %d:\n%s", i, got)
+		}
+	}
+	if !foundGroup1 {
+		t.Fatalf("group 1 header not found in sidebar:\n%s", got)
+	}
+}
+
+func TestRefreshSidebar_ShowsActiveTargetIndicator(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#a")
+	u.state.JoinChannel("#b")
+	u.state.SetTarget("#b")
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+
+	if !strings.Contains(got, "\n▶ #b") && !strings.HasPrefix(got, "▶ #b") {
+		t.Fatalf("sidebar missing active-target marker for #b:\n%s", got)
+	}
+	if strings.Contains(got, "\n▶ #a") || strings.HasPrefix(got, "▶ #a") {
+		t.Fatalf("sidebar marked non-target channel as active:\n%s", got)
+	}
+}
+
+func TestRefreshSidebar_NoIndicatorWhenTargetIsNonNumericChannel(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#a")
+	u.state.JoinChannel("#b")
+	u.state.JoinChannel("alice")
+	u.state.SetTarget("alice")
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+
+	if strings.Contains(got, "▶ ") {
+		t.Fatalf("sidebar should not show active-target marker for non-numeric target:\n%s", got)
+	}
+}
+
+func TestRefreshSidebar_ShowsIndicatorInHiddenGroup(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#a")
+	u.state.JoinChannel("#b")
+	u.state.SetVisible(state.GroupID(1), false)
+	u.state.SetTarget("#b")
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+
+	if !strings.Contains(got, "\n○ 2 ") && !strings.HasPrefix(got, "○ 2 ") {
+		t.Fatalf("hidden group header missing:\n%s", got)
+	}
+	if !strings.Contains(got, "\n▶ #b") && !strings.HasPrefix(got, "▶ #b") {
+		t.Fatalf("sidebar should show active-target marker in hidden group:\n%s", got)
+	}
+}
+
+func TestToggleSidebar_ResizesContentRow(t *testing.T) {
+	u, _ := newTestUI(t)
+
+	drawUIRoot(t, u, 100, 20)
+	_, _, hiddenW, _ := u.sidebarView.GetRect()
+	_, _, hiddenDividerW, _ := u.sidebarDivider.GetRect()
+	if hiddenW != 0 {
+		t.Fatalf("hidden sidebar width=%d want 0", hiddenW)
+	}
+	if hiddenDividerW != 0 {
+		t.Fatalf("hidden divider width=%d want 0", hiddenDividerW)
+	}
+
+	u.toggleSidebar()
+	drawUIRoot(t, u, 100, 20)
+	_, _, shownW, _ := u.sidebarView.GetRect()
+	_, _, shownDividerW, _ := u.sidebarDivider.GetRect()
+	if shownW != sidebarWidth {
+		t.Fatalf("shown sidebar width=%d want %d", shownW, sidebarWidth)
+	}
+	if shownDividerW != 1 {
+		t.Fatalf("shown divider width=%d want 1", shownDividerW)
+	}
+
+	u.toggleSidebar()
+	drawUIRoot(t, u, 100, 20)
+	_, _, hiddenAgainW, _ := u.sidebarView.GetRect()
+	_, _, hiddenAgainDividerW, _ := u.sidebarDivider.GetRect()
+	if hiddenAgainW != 0 {
+		t.Fatalf("hidden-again sidebar width=%d want 0", hiddenAgainW)
+	}
+	if hiddenAgainDividerW != 0 {
+		t.Fatalf("hidden-again divider width=%d want 0", hiddenAgainDividerW)
 	}
 }
 
@@ -393,6 +604,97 @@ func TestHandleSubmit_JoinError(t *testing.T) {
 	}
 }
 
+func TestHandleSubmit_PartActiveChannel(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.state.JoinChannel("#a")
+
+	u.handleSubmit("/part")
+
+	if len(fs.parts) != 1 || fs.parts[0] != (sentPart{Channel: "#a", Reason: ""}) {
+		t.Fatalf("parts=%v", fs.parts)
+	}
+}
+
+func TestHandleSubmit_PartActiveChannelWithReason(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.state.JoinChannel("#a")
+
+	u.handleSubmit("/part stepping away")
+
+	if len(fs.parts) != 1 || fs.parts[0] != (sentPart{Channel: "#a", Reason: "stepping away"}) {
+		t.Fatalf("parts=%v", fs.parts)
+	}
+}
+
+func TestHandleSubmit_PartExplicitChannelWithReason(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.state.JoinChannel("#a")
+	u.state.JoinChannel("#b")
+
+	u.handleSubmit("/part #b see ya")
+
+	if len(fs.parts) != 1 || fs.parts[0] != (sentPart{Channel: "#b", Reason: "see ya"}) {
+		t.Fatalf("parts=%v", fs.parts)
+	}
+}
+
+func TestHandleSubmit_PartNoTarget(t *testing.T) {
+	u, fs := newTestUI(t)
+
+	u.handleSubmit("/part")
+
+	if len(fs.parts) != 0 {
+		t.Fatalf("unexpected part calls: %v", fs.parts)
+	}
+	ev := u.state.Events()
+	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "no target") {
+		t.Fatalf("expected no-target event, got %v", ev)
+	}
+}
+
+func TestHandleSubmit_PartQueryTargetRejected(t *testing.T) {
+	u, fs := newTestUI(t)
+	u.state.JoinChannel("alice")
+	u.state.SetTarget("alice")
+
+	u.handleSubmit("/part")
+
+	if len(fs.parts) != 0 {
+		t.Fatalf("unexpected part calls: %v", fs.parts)
+	}
+	ev := u.state.Events()
+	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "cannot part from queries/server") {
+		t.Fatalf("expected query/server error event, got %v", ev)
+	}
+}
+
+func TestHandleSubmit_PartServerTargetRejected(t *testing.T) {
+	u, fs := newTestUI(t)
+
+	u.handleSubmit("/part " + state.ServerChannelName)
+
+	if len(fs.parts) != 0 {
+		t.Fatalf("unexpected part calls: %v", fs.parts)
+	}
+	ev := u.state.Events()
+	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "cannot part from queries/server") {
+		t.Fatalf("expected query/server error event, got %v", ev)
+	}
+}
+
+func TestHandleSubmit_PartError(t *testing.T) {
+	u, fs := newTestUI(t)
+	fs.partErr = errors.New("not on channel")
+	u.state.JoinChannel("#a")
+
+	u.handleSubmit("/part")
+
+	ev := u.state.Events()
+	if len(ev) == 0 || !strings.Contains(ev[len(ev)-1], "part failed") {
+		t.Fatalf("expected part-failed event, got %v", ev)
+	}
+}
+
 func TestTryJoinCompletion_OnlyCommandAddsHash(t *testing.T) {
 	u, _ := newTestUI(t)
 	u.input.SetText("/join ")
@@ -529,6 +831,126 @@ func TestTryJoinCompletion_ExcludesAlreadyJoinedChannels(t *testing.T) {
 	}
 }
 
+func TestTryPartCompletion_SingleMatch(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#golang")
+	u.state.JoinChannel("#rust")
+	u.input.SetText("/part #go")
+
+	if !u.tryPartCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #golang" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestTryPartCompletion_CompletesLargestCommonPrefix(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#go-help")
+	u.state.JoinChannel("#go-nuts")
+	u.state.JoinChannel("#games")
+	u.input.SetText("/part #g")
+
+	if !u.tryPartCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #g" {
+		t.Fatalf("expected unchanged partial because lcp == partial, got %q", got)
+	}
+
+	u.input.SetText("/part #go")
+	if !u.tryPartCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #go-" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestTryPartCompletion_DoubleTabShowsCompletions(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.eventsView.SetRect(0, 0, 80, 5)
+	u.state.JoinChannel("#go-help")
+	u.state.JoinChannel("#go-nuts")
+	u.state.JoinChannel("#go-dev")
+	u.input.SetText("/part #go-")
+	before := len(u.state.Events())
+
+	if !u.tryPartCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected completions in events, before=%d after=%d", before, len(after))
+	}
+}
+
+func TestTryPartCompletion_DoubleTabAfterLCPExpansionShowsSameSuggestions(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.eventsView.SetRect(0, 0, 80, 5)
+	u.state.JoinChannel("#archive")
+	u.state.JoinChannel("#archivebot-alerts")
+	u.state.JoinChannel("#archivebot-bs")
+	u.state.JoinChannel("#archiveteam-internal")
+
+	u.input.SetText("/part #arch")
+	if !u.tryPartCompletion() {
+		t.Fatal("first completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #archive" {
+		t.Fatalf("input=%q", got)
+	}
+
+	before := len(u.state.Events())
+	if !u.tryPartCompletion() {
+		t.Fatal("second completion not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected suggestions after second tab, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	for _, want := range []string{"#archive", "#archivebot-alerts", "#archivebot-bs", "#archiveteam-internal"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in suggestions: %v", want, after[before:])
+		}
+	}
+}
+
+func TestTryPartCompletion_DoubleTabUsesSavedCandidatesIfChannelsChange(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.eventsView.SetRect(0, 0, 80, 5)
+	u.state.JoinChannel("#archive")
+	u.state.JoinChannel("#archivebot-alerts")
+	u.state.JoinChannel("#archivebot-bs")
+
+	u.input.SetText("/part #arch")
+	if !u.tryPartCompletion() {
+		t.Fatal("first completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #archive" {
+		t.Fatalf("input=%q", got)
+	}
+
+	// Simulate channel state changing between first and second Tab.
+	u.state.PartChannel("#archivebot-alerts")
+	u.state.PartChannel("#archivebot-bs")
+
+	before := len(u.state.Events())
+	if !u.tryPartCompletion() {
+		t.Fatal("second completion not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected suggestions after second tab, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	if !strings.Contains(joined, "#archivebot-alerts") || !strings.Contains(joined, "#archivebot-bs") {
+		t.Fatalf("expected saved candidates in suggestions, got %v", after[before:])
+	}
+}
+
 func TestHandleKey_TabCompletesJoin(t *testing.T) {
 	u, _ := newTestUI(t)
 	u.state.SetChannelListCache([]string{"#golang"})
@@ -538,6 +960,32 @@ func TestHandleKey_TabCompletesJoin(t *testing.T) {
 		t.Fatal("tab not consumed")
 	}
 	if got := u.input.GetText(); got != "/join #golang" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestHandleKey_TabCompletesPart(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#golang")
+	u.input.SetText("/part #go")
+	ev := tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("tab not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #golang" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestHandleKey_TabFallsBackToPartAfterJoinMiss(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#go")
+	u.input.SetText("/part #g")
+	ev := tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("tab not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #go" {
 		t.Fatalf("input=%q", got)
 	}
 }
@@ -564,6 +1012,26 @@ func TestHandleKey_AltDigitTogglesGroup(t *testing.T) {
 	}
 	if u.state.IsVisible(state.GroupID(0)) {
 		t.Error("group 0 still visible after Alt+1")
+	}
+}
+
+func TestHandleKey_AltGTogglesSidebar(t *testing.T) {
+	u, _ := newTestUI(t)
+
+	ev := tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModAlt)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("Alt+g not consumed")
+	}
+	if !u.sidebarVisible {
+		t.Fatal("sidebar not visible after Alt+g")
+	}
+
+	evShift := tcell.NewEventKey(tcell.KeyRune, 'G', tcell.ModAlt)
+	if got := u.handleKey(evShift); got != nil {
+		t.Fatal("Alt+G not consumed")
+	}
+	if u.sidebarVisible {
+		t.Fatal("sidebar still visible after second Alt+G")
 	}
 }
 
@@ -662,6 +1130,31 @@ func TestHandleKey_CtrlNCyclesForward(t *testing.T) {
 	}
 }
 
+func TestHandleKey_CtrlNRefreshesSidebarTargetIndicator(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.EnsureChannel("#a")
+	u.state.EnsureChannel("#b")
+	u.refreshSidebar()
+
+	before := u.sidebarView.GetText(true)
+	if !strings.Contains(before, "▶ #a") {
+		t.Fatalf("expected initial sidebar target marker on #a, got:\n%s", before)
+	}
+
+	ev := tcell.NewEventKey(tcell.KeyCtrlN, 0, tcell.ModCtrl)
+	if u.handleKey(ev) != nil {
+		t.Error("Ctrl-N not consumed")
+	}
+
+	after := u.sidebarView.GetText(true)
+	if !strings.Contains(after, "▶ #b") {
+		t.Fatalf("expected sidebar target marker on #b after Ctrl-N, got:\n%s", after)
+	}
+	if strings.Contains(after, "▶ #a") {
+		t.Fatalf("sidebar target marker still on #a after Ctrl-N:\n%s", after)
+	}
+}
+
 func TestHandleKey_CtrlPCyclesBackward(t *testing.T) {
 	u, _ := newTestUI(t)
 	u.state.EnsureChannel("#a")
@@ -672,6 +1165,31 @@ func TestHandleKey_CtrlPCyclesBackward(t *testing.T) {
 	}
 	if u.state.Target() != "#b" {
 		t.Errorf("target after Ctrl-P=%q", u.state.Target())
+	}
+}
+
+func TestHandleKey_CtrlPRefreshesSidebarTargetIndicator(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.EnsureChannel("#a")
+	u.state.EnsureChannel("#b")
+	u.refreshSidebar()
+
+	before := u.sidebarView.GetText(true)
+	if !strings.Contains(before, "▶ #a") {
+		t.Fatalf("expected initial sidebar target marker on #a, got:\n%s", before)
+	}
+
+	ev := tcell.NewEventKey(tcell.KeyCtrlP, 0, tcell.ModCtrl)
+	if u.handleKey(ev) != nil {
+		t.Error("Ctrl-P not consumed")
+	}
+
+	after := u.sidebarView.GetText(true)
+	if !strings.Contains(after, "▶ #b") {
+		t.Fatalf("expected sidebar target marker on #b after Ctrl-P, got:\n%s", after)
+	}
+	if strings.Contains(after, "▶ #a") {
+		t.Fatalf("sidebar target marker still on #a after Ctrl-P:\n%s", after)
 	}
 }
 

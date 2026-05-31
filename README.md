@@ -68,10 +68,12 @@ capacities).
 ## Grouping Strategies
 
 Euphrates can load ordered Lua grouping strategies from `--grouping-dir`
-(default: `~/.config/euphrates/grouping.d`). Strategies run in lexical filename
+(default: `~/.euphrates/grouping.d`). Strategies run in lexical filename
 order and the first strategy that returns a valid full assignment is used.
 
-Starter strategies are included in `examples/grouping/`:
+Starter strategies are bundled into release binaries and auto-installed into
+`~/.euphrates/grouping.d` on first run (existing files are never overwritten).
+They are also available in `examples/grouping/` in the source tree:
 
 - `010_common_prefix.lua`: group a newly joined channel with the existing
 	channel that shares the longest common prefix (minimum 4 characters after the
@@ -79,12 +81,7 @@ Starter strategies are included in `examples/grouping/`:
 - `020_delimiter_stem.lua`: group channels sharing a prefix before `-`, `_`, or
 	`.` (for example `#python-dev`, `#python-help`, `#python-jobs`).
 
-Install them with:
-
-```bash
-mkdir -p ~/.config/euphrates/grouping.d
-cp examples/grouping/*.lua ~/.config/euphrates/grouping.d/
-```
+To customize, edit or add `*.lua` files in `~/.euphrates/grouping.d`.
 
 ## Layout
 
@@ -144,6 +141,7 @@ The input line is prefixed with the current target channel in brackets. The pref
 | Key            | Action                                  |
 | -------------- | --------------------------------------- |
 | Alt+1..0       | Toggle visibility of numeric group 1-10 |
+| Alt-G          | Show/hide channels sidebar              |
 | F1..F10        | Solo numeric group 1-10                 |
 | Ctrl-N         | Next channel (target)                   |
 | Ctrl-P         | Previous channel (target)               |

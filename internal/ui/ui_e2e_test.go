@@ -86,6 +86,41 @@ func TestJoinCompletion_DoubleTabAfterLCPExpansion_E2E(t *testing.T) {
 	}
 }
 
+func TestPartCompletion_DoubleTabAfterLCPExpansion_E2E(t *testing.T) {
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20})
+	fs := &fakeSender{nick: "me"}
+	u := New(s, fs)
+	u.eventsView.SetRect(0, 0, 120, 5)
+	u.state.JoinChannel("#archive")
+	u.state.JoinChannel("#archivebot-alerts")
+	u.state.JoinChannel("#archivebot-bs")
+	u.state.JoinChannel("#archiveteam-internal")
+	u.state.JoinChannel("#archiveteam-matrix")
+
+	u.input.SetText("/part #arch")
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)); got != nil {
+		t.Fatalf("first tab not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #archive" {
+		t.Fatalf("input=%q want /part #archive", got)
+	}
+
+	before := len(u.state.Events())
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)); got != nil {
+		t.Fatalf("second tab not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected completion suggestions in events, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	for _, want := range []string{"#archive", "#archivebot-alerts", "#archivebot-bs", "#archiveteam-internal", "#archiveteam-matrix"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in events: %v", want, after[before:])
+		}
+	}
+}
+
 func TestJoinAndPartHooks_ApplyRegroupingStrategy_E2E(t *testing.T) {
 	strategy := uiGroupingStrategyFunc(func(input state.GroupingInput) (state.Assignment, bool, error) {
 		out := make(state.Assignment, len(input.Channels))
@@ -123,5 +158,77 @@ func TestJoinAndPartHooks_ApplyRegroupingStrategy_E2E(t *testing.T) {
 
 	if lines := s.RenderVisible(); len(lines) != 0 {
 		t.Fatalf("expected no visible lines after hiding regrouped channel, got %d", len(lines))
+	}
+}
+
+func TestSidebarToggleAndJoinUpdates_E2E(t *testing.T) {
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20})
+	fs := &fakeSender{nick: "me"}
+	u := New(s, fs)
+
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModAlt)); got != nil {
+		t.Fatalf("Alt+g not consumed")
+	}
+	if !u.sidebarVisible {
+		t.Fatal("sidebar should be visible")
+	}
+
+	u.state.JoinChannel("#a")
+	u.state.JoinChannel("#b")
+	u.state.JoinChannel("#c")
+	u.state.JoinChannel("#d")
+	u.state.JoinChannel("#e")
+	u.state.JoinChannel("#f")
+	u.state.JoinChannel("#g")
+	u.state.JoinChannel("#h")
+	u.state.JoinChannel("#i")
+	u.state.JoinChannel("#j")
+	u.state.JoinChannel("#k")
+	u.refreshSidebar()
+
+	got := u.sidebarView.GetText(true)
+	// Check for group headers with visibility indicators, lines, and channels.
+	for _, digit := range []string{"1", "2", "0"} {
+		found := false
+		for _, line := range strings.Split(got, "\n") {
+			if strings.HasPrefix(line, "● ") && strings.Contains(line, " "+digit+" ") && strings.Contains(line, "─") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("sidebar missing group header for %q in %q", digit, got)
+		}
+	}
+
+	u.state.SetTarget("#b")
+	u.state.SetVisible(state.GroupID(1), false)
+	u.refreshSidebar()
+	hidden := u.sidebarView.GetText(true)
+	if !strings.Contains(hidden, "\n○ 2 ") && !strings.HasPrefix(hidden, "○ 2 ") {
+		t.Fatalf("group 2 hidden indicator missing in %q", hidden)
+	}
+	if !strings.Contains(hidden, "\n▶ #b") && !strings.HasPrefix(hidden, "▶ #b") {
+		t.Fatalf("active-target marker missing for #b in hidden group: %q", hidden)
+	}
+
+	if !strings.Contains(got, "▶ #a") || !strings.Contains(got, "  #k") {
+		t.Fatalf("sidebar missing channels in %q", got)
+	}
+	// Verify group 1 has channels in insertion order
+	lines := strings.Split(got, "\n")
+	foundGroup1 := false
+	for i, line := range lines {
+		if strings.HasPrefix(line, "● 1 ") && strings.Contains(line, "─") {
+			foundGroup1 = true
+			// Next two lines should be #a and #k; #a is initial target.
+			if i+2 < len(lines) && lines[i+1] == "▶ #a" && lines[i+2] == "  #k" {
+				break
+			}
+			t.Fatalf("group 1 ordering wrong:\n%s", got)
+		}
+	}
+	if !foundGroup1 {
+		t.Fatalf("group 1 header not found:\n%s", got)
 	}
 }
