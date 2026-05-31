@@ -38,6 +38,7 @@ type UI struct {
 	manualScroll bool
 
 	joinCompletion joinCompletionState
+	partCompletion partCompletionState
 
 	statusView       *tview.TextView
 	statusCountView  *tview.TextView
@@ -58,6 +59,11 @@ type UI struct {
 }
 
 type joinCompletionState struct {
+	expandedInput string
+	matches       []string
+}
+
+type partCompletionState struct {
 	expandedInput string
 	matches       []string
 }
@@ -457,6 +463,9 @@ func (u *UI) handleKey(ev *tcell.EventKey) *tcell.EventKey {
 		if u.tryJoinCompletion() {
 			return nil
 		}
+		if u.tryPartCompletion() {
+			return nil
+		}
 	}
 	return ev
 }
@@ -707,6 +716,43 @@ func (u *UI) tryJoinCompletion() bool {
 		expanded := "/join " + lcp
 		u.input.SetText(expanded)
 		u.joinCompletion = joinCompletionState{
+			expandedInput: expanded,
+			matches:       append([]string(nil), matches...),
+		}
+		return true
+	}
+
+	u.showCompletionList(matches)
+	return true
+}
+
+func (u *UI) tryPartCompletion() bool {
+	text := u.input.GetText()
+	if !strings.HasPrefix(strings.ToLower(text), "/part ") {
+		u.partCompletion = partCompletionState{}
+		return false
+	}
+	if text == u.partCompletion.expandedInput && len(u.partCompletion.matches) > 1 {
+		u.showCompletionList(u.partCompletion.matches)
+		return true
+	}
+	u.partCompletion = partCompletionState{}
+
+	partial := text[len("/part "):]
+	matches := u.state.MatchPartableChannels(partial)
+	if len(matches) == 0 {
+		return true
+	}
+	if len(matches) == 1 {
+		u.input.SetText("/part " + matches[0])
+		return true
+	}
+
+	lcp := longestCommonPrefix(matches)
+	if lcp != "" && !strings.EqualFold(lcp, partial) {
+		expanded := "/part " + lcp
+		u.input.SetText(expanded)
+		u.partCompletion = partCompletionState{
 			expandedInput: expanded,
 			matches:       append([]string(nil), matches...),
 		}

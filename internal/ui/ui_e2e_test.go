@@ -86,6 +86,41 @@ func TestJoinCompletion_DoubleTabAfterLCPExpansion_E2E(t *testing.T) {
 	}
 }
 
+func TestPartCompletion_DoubleTabAfterLCPExpansion_E2E(t *testing.T) {
+	s := state.New(state.Config{MessageCap: 100, EventCap: 20})
+	fs := &fakeSender{nick: "me"}
+	u := New(s, fs)
+	u.eventsView.SetRect(0, 0, 120, 5)
+	u.state.JoinChannel("#archive")
+	u.state.JoinChannel("#archivebot-alerts")
+	u.state.JoinChannel("#archivebot-bs")
+	u.state.JoinChannel("#archiveteam-internal")
+	u.state.JoinChannel("#archiveteam-matrix")
+
+	u.input.SetText("/part #arch")
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)); got != nil {
+		t.Fatalf("first tab not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #archive" {
+		t.Fatalf("input=%q want /part #archive", got)
+	}
+
+	before := len(u.state.Events())
+	if got := u.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)); got != nil {
+		t.Fatalf("second tab not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected completion suggestions in events, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	for _, want := range []string{"#archive", "#archivebot-alerts", "#archivebot-bs", "#archiveteam-internal", "#archiveteam-matrix"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in events: %v", want, after[before:])
+		}
+	}
+}
+
 func TestJoinAndPartHooks_ApplyRegroupingStrategy_E2E(t *testing.T) {
 	strategy := uiGroupingStrategyFunc(func(input state.GroupingInput) (state.Assignment, bool, error) {
 		out := make(state.Assignment, len(input.Channels))

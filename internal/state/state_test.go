@@ -425,6 +425,45 @@ func TestMatchJoinableChannels_PrefixAndSort(t *testing.T) {
 	}
 }
 
+func TestMatchPartableChannels_Basic(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#beta")
+	s.JoinChannel("#alpha")
+
+	got := s.MatchPartableChannels("#")
+	want := []string{"#alpha", "#beta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("matches=%v want %v", got, want)
+	}
+}
+
+func TestMatchPartableChannels_ExcludesServerAndQueries(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#alpha")
+	s.JoinChannel("alice")
+	s.JoinChannel(ServerChannelName)
+
+	got := s.MatchPartableChannels("")
+	want := []string{"#alpha"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("matches=%v want %v", got, want)
+	}
+}
+
+func TestMatchPartableChannels_CaseInsensitivePrefixAndSort(t *testing.T) {
+	s := newTestState()
+	s.JoinChannel("#Zoo")
+	s.JoinChannel("#apple")
+	s.JoinChannel("#alpha")
+	s.JoinChannel("#beta")
+
+	got := s.MatchPartableChannels("#A")
+	want := []string{"#alpha", "#apple"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("matches=%v want %v", got, want)
+	}
+}
+
 func TestServerNotTargetedOnFirstJoin(t *testing.T) {
 	s := newTestState()
 	s.EnsureChannel(ServerChannelName)

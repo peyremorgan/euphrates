@@ -831,6 +831,126 @@ func TestTryJoinCompletion_ExcludesAlreadyJoinedChannels(t *testing.T) {
 	}
 }
 
+func TestTryPartCompletion_SingleMatch(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#golang")
+	u.state.JoinChannel("#rust")
+	u.input.SetText("/part #go")
+
+	if !u.tryPartCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #golang" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestTryPartCompletion_CompletesLargestCommonPrefix(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#go-help")
+	u.state.JoinChannel("#go-nuts")
+	u.state.JoinChannel("#games")
+	u.input.SetText("/part #g")
+
+	if !u.tryPartCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #g" {
+		t.Fatalf("expected unchanged partial because lcp == partial, got %q", got)
+	}
+
+	u.input.SetText("/part #go")
+	if !u.tryPartCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #go-" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestTryPartCompletion_DoubleTabShowsCompletions(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.eventsView.SetRect(0, 0, 80, 5)
+	u.state.JoinChannel("#go-help")
+	u.state.JoinChannel("#go-nuts")
+	u.state.JoinChannel("#go-dev")
+	u.input.SetText("/part #go-")
+	before := len(u.state.Events())
+
+	if !u.tryPartCompletion() {
+		t.Fatal("completion not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected completions in events, before=%d after=%d", before, len(after))
+	}
+}
+
+func TestTryPartCompletion_DoubleTabAfterLCPExpansionShowsSameSuggestions(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.eventsView.SetRect(0, 0, 80, 5)
+	u.state.JoinChannel("#archive")
+	u.state.JoinChannel("#archivebot-alerts")
+	u.state.JoinChannel("#archivebot-bs")
+	u.state.JoinChannel("#archiveteam-internal")
+
+	u.input.SetText("/part #arch")
+	if !u.tryPartCompletion() {
+		t.Fatal("first completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #archive" {
+		t.Fatalf("input=%q", got)
+	}
+
+	before := len(u.state.Events())
+	if !u.tryPartCompletion() {
+		t.Fatal("second completion not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected suggestions after second tab, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	for _, want := range []string{"#archive", "#archivebot-alerts", "#archivebot-bs", "#archiveteam-internal"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in suggestions: %v", want, after[before:])
+		}
+	}
+}
+
+func TestTryPartCompletion_DoubleTabUsesSavedCandidatesIfChannelsChange(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.eventsView.SetRect(0, 0, 80, 5)
+	u.state.JoinChannel("#archive")
+	u.state.JoinChannel("#archivebot-alerts")
+	u.state.JoinChannel("#archivebot-bs")
+
+	u.input.SetText("/part #arch")
+	if !u.tryPartCompletion() {
+		t.Fatal("first completion not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #archive" {
+		t.Fatalf("input=%q", got)
+	}
+
+	// Simulate channel state changing between first and second Tab.
+	u.state.PartChannel("#archivebot-alerts")
+	u.state.PartChannel("#archivebot-bs")
+
+	before := len(u.state.Events())
+	if !u.tryPartCompletion() {
+		t.Fatal("second completion not consumed")
+	}
+	after := u.state.Events()
+	if len(after) <= before {
+		t.Fatalf("expected suggestions after second tab, before=%d after=%d", before, len(after))
+	}
+	joined := strings.Join(after[before:], " ")
+	if !strings.Contains(joined, "#archivebot-alerts") || !strings.Contains(joined, "#archivebot-bs") {
+		t.Fatalf("expected saved candidates in suggestions, got %v", after[before:])
+	}
+}
+
 func TestHandleKey_TabCompletesJoin(t *testing.T) {
 	u, _ := newTestUI(t)
 	u.state.SetChannelListCache([]string{"#golang"})
@@ -840,6 +960,32 @@ func TestHandleKey_TabCompletesJoin(t *testing.T) {
 		t.Fatal("tab not consumed")
 	}
 	if got := u.input.GetText(); got != "/join #golang" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestHandleKey_TabCompletesPart(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#golang")
+	u.input.SetText("/part #go")
+	ev := tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("tab not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #golang" {
+		t.Fatalf("input=%q", got)
+	}
+}
+
+func TestHandleKey_TabFallsBackToPartAfterJoinMiss(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#go")
+	u.input.SetText("/part #g")
+	ev := tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)
+	if got := u.handleKey(ev); got != nil {
+		t.Fatal("tab not consumed")
+	}
+	if got := u.input.GetText(); got != "/part #go" {
 		t.Fatalf("input=%q", got)
 	}
 }

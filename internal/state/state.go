@@ -218,6 +218,29 @@ func (s *State) MatchJoinableChannels(prefix string) []string {
 	return out
 }
 
+// MatchPartableChannels returns joined normal channels matching prefix.
+// Matching is case-insensitive.
+func (s *State) MatchPartableChannels(prefix string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	prefixKey := canonicalKey(prefix)
+	out := make([]string, 0, len(s.channels))
+	for _, c := range s.channels {
+		if c.Kind != ChanNormal {
+			continue
+		}
+		if !strings.HasPrefix(canonicalKey(c.Name), prefixKey) {
+			continue
+		}
+		out = append(out, c.Name)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return canonicalKey(out[i]) < canonicalKey(out[j])
+	})
+	return out
+}
+
 // --- messaging --------------------------------------------------------------
 
 // AppendMessage stores m in the message log (auto-creating its channel if
