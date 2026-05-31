@@ -202,8 +202,9 @@ func TestRefreshSidebar_UsesInsertionOrderWithinGroup(t *testing.T) {
 	for i, line := range lines {
 		if strings.Contains(line, "1") && strings.Contains(line, "─") {
 			foundGroup1 = true
-			// Next two lines should be the channels in insertion order
-			if i+2 < len(lines) && lines[i+1] == "  #a" && lines[i+2] == "  #k" {
+			// Next two lines should be channels in insertion order; current target
+			// is marked with the active-channel indicator.
+			if i+2 < len(lines) && lines[i+1] == "▶ #a" && lines[i+2] == "  #k" {
 				return // Test passed
 			}
 			t.Fatalf("group 1 channels not in expected insertion order after line %d:\n%s", i, got)
@@ -211,6 +212,56 @@ func TestRefreshSidebar_UsesInsertionOrderWithinGroup(t *testing.T) {
 	}
 	if !foundGroup1 {
 		t.Fatalf("group 1 header not found in sidebar:\n%s", got)
+	}
+}
+
+func TestRefreshSidebar_ShowsActiveTargetIndicator(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#a")
+	u.state.JoinChannel("#b")
+	u.state.SetTarget("#b")
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+
+	if !strings.Contains(got, "\n▶ #b") && !strings.HasPrefix(got, "▶ #b") {
+		t.Fatalf("sidebar missing active-target marker for #b:\n%s", got)
+	}
+	if strings.Contains(got, "\n▶ #a") || strings.HasPrefix(got, "▶ #a") {
+		t.Fatalf("sidebar marked non-target channel as active:\n%s", got)
+	}
+}
+
+func TestRefreshSidebar_NoIndicatorWhenTargetIsNonNumericChannel(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#a")
+	u.state.JoinChannel("#b")
+	u.state.JoinChannel("alice")
+	u.state.SetTarget("alice")
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+
+	if strings.Contains(got, "▶ ") {
+		t.Fatalf("sidebar should not show active-target marker for non-numeric target:\n%s", got)
+	}
+}
+
+func TestRefreshSidebar_ShowsIndicatorInHiddenGroup(t *testing.T) {
+	u, _ := newTestUI(t)
+	u.state.JoinChannel("#a")
+	u.state.JoinChannel("#b")
+	u.state.SetVisible(state.GroupID(1), false)
+	u.state.SetTarget("#b")
+
+	u.refreshSidebar()
+	got := u.sidebarView.GetText(true)
+
+	if !strings.Contains(got, "\n○ 2 ") && !strings.HasPrefix(got, "○ 2 ") {
+		t.Fatalf("hidden group header missing:\n%s", got)
+	}
+	if !strings.Contains(got, "\n▶ #b") && !strings.HasPrefix(got, "▶ #b") {
+		t.Fatalf("sidebar should show active-target marker in hidden group:\n%s", got)
 	}
 }
 

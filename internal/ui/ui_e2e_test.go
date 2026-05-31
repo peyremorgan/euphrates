@@ -166,14 +166,18 @@ func TestSidebarToggleAndJoinUpdates_E2E(t *testing.T) {
 		}
 	}
 
+	u.state.SetTarget("#b")
 	u.state.SetVisible(state.GroupID(1), false)
 	u.refreshSidebar()
 	hidden := u.sidebarView.GetText(true)
 	if !strings.Contains(hidden, "\n○ 2 ") && !strings.HasPrefix(hidden, "○ 2 ") {
 		t.Fatalf("group 2 hidden indicator missing in %q", hidden)
 	}
+	if !strings.Contains(hidden, "\n▶ #b") && !strings.HasPrefix(hidden, "▶ #b") {
+		t.Fatalf("active-target marker missing for #b in hidden group: %q", hidden)
+	}
 
-	if !strings.Contains(got, "  #a") || !strings.Contains(got, "  #k") {
+	if !strings.Contains(got, "▶ #a") || !strings.Contains(got, "  #k") {
 		t.Fatalf("sidebar missing channels in %q", got)
 	}
 	// Verify group 1 has channels in insertion order
@@ -182,8 +186,8 @@ func TestSidebarToggleAndJoinUpdates_E2E(t *testing.T) {
 	for i, line := range lines {
 		if strings.HasPrefix(line, "● 1 ") && strings.Contains(line, "─") {
 			foundGroup1 = true
-			// Next two lines should be #a and #k
-			if i+2 < len(lines) && lines[i+1] == "  #a" && lines[i+2] == "  #k" {
+			// Next two lines should be #a and #k; #a is initial target.
+			if i+2 < len(lines) && lines[i+1] == "▶ #a" && lines[i+2] == "  #k" {
 				break
 			}
 			t.Fatalf("group 1 ordering wrong:\n%s", got)

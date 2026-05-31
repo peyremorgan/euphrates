@@ -270,6 +270,7 @@ func (u *UI) refreshEvents() {
 
 func (u *UI) refreshSidebar() {
 	channels := u.state.Channels()
+	target := u.state.Target()
 	grouped := make([][]string, state.NumGroups)
 	for _, c := range channels {
 		if !c.Group.IsNumeric() {
@@ -286,7 +287,11 @@ func (u *UI) refreshSidebar() {
 		b.WriteString(formatGroupHeader(i, u.state.IsVisible(state.GroupID(i))))
 		for _, name := range grouped[i] {
 			b.WriteByte('\n')
-			b.WriteString("  ")
+			if target != "" && strings.EqualFold(name, target) {
+				b.WriteString("▶ ")
+			} else {
+				b.WriteString("  ")
+			}
 			b.WriteString(state.Escape(name))
 		}
 	}
